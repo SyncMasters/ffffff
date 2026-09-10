@@ -1,6 +1,6 @@
 # AgentSearch
 
-AgentSearch is a Go command-line tool for authorized account discovery and exposure checks. It combines configurable website profile searches with authenticated email breach lookups through [Have I Been Pwned (HIBP)](https://haveibeenpwned.com/), using a common result model and output pipeline.
+AgentSearch is a Go command-line tool for authorized account discovery and exposure checks. It combines configurable website profile searches with authenticated email breach lookups and key-free Pwned Passwords range checks through [Have I Been Pwned (HIBP)](https://haveibeenpwned.com/), using a common result model and output pipeline.
 
 It is intended for defensive investigations, personal exposure checks, and security research where you have permission to query the target. A match is evidence to review, not proof of identity or of a currently compromised account.
 
@@ -10,14 +10,15 @@ It is intended for defensive investigations, personal exposure checks, and secur
 | --- | --- |
 | Implemented | Website searches using native YAML/JSON, Sherlock, and Maigret site databases |
 | Implemented | HIBP email breach lookup using an API subscription key |
+| Implemented | Single-password Pwned Passwords API lookup with local SHA-1 and a no-echo prompt |
 | Implemented | Fixed website worker pool, cancellable host delays, request timeouts, direct-request retries, proxy rotation, and User-Agent rotation |
 | Implemented | Status, message, regex, redirect, header, and WAF detection rules |
 | Implemented | Shared JSON, CSV, and TXT output; CLI and HTML reports |
 | License-dependent | DOCX reports through the existing UniOffice dependency |
 | Experimental | Website uTLS support; transport combinations have known limitations |
-| Planned | Pwned Passwords API, offline password database, HTTP API, and AI analysis |
+| Planned | Offline Pwned Passwords database, HTTP API, AI analysis, and additional external sources |
 
-**Password lookup is not implemented.** Do not pass passwords to any current CLI option. The `-d` flag is retained for compatibility but remains a no-op stub.
+**For password checks, use `-password-prompt`. Never put passwords in website targets, target files, email input, or service YAML.** The `-d` flag is retained for compatibility but remains a no-op stub.
 
 ## Installation
 
@@ -54,7 +55,7 @@ An email-like value passed through `-u` or `-f` is still substituted into websit
 
 This mode registers only the HIBP source; it does not load the website database, create website workers, or query websites. It requires the configuration steps below. There is no email subcommand or batch email option in this release: use the explicit `-email` flag.
 
-## Configure HIBP
+## Configure HIBP email lookup
 
 1. Obtain an appropriate subscription key from the [official HIBP API key page](https://haveibeenpwned.com/API/Key).
 2. Enable HIBP in `configs/services.yaml`:
@@ -93,7 +94,7 @@ This mode registers only the HIBP source; it does not load the website database,
    ./agentsearch -email user@example.com -services my-services.yaml -rt 15s -of json,csv,txt -rf cli,html -o email-results
    ```
 
-The services file is loaded **only** for `-email`. Website-specific flags such as `-u`, `-f`, `-s`, `-p`, `-w`, `-rl`, `-ua`, `-utls`, and `-retries` cannot be combined with `-email`. HIBP uses a standard TLS client and an identifying AgentSearch User-Agent, not browser impersonation or proxy rotation. It does not use environment proxy settings.
+The services file is loaded automatically for `-email`, or when explicitly passed with password mode. Legacy website modes never load it. Website-specific flags such as `-u`, `-f`, `-s`, `-p`, `-w`, `-rl`, `-ua`, `-utls`, and `-retries` cannot be combined with `-email`. HIBP uses a standard TLS client and an identifying AgentSearch User-Agent, not browser impersonation or proxy rotation. It does not use environment proxy settings.
 
 ### HIBP protocol and result semantics
 
@@ -123,7 +124,91 @@ The complete email address is sent to the configured API endpoint. This stage do
 
 A custom `api_url` is useful for local testing but receives the key and target. Treat this configuration as trusted. HTTPS is required, except for HTTP endpoints on literal loopback IP addresses used in local tests. URLs containing credentials, query strings, or fragments are rejected. Redirects are not followed, preventing the custom API-key header from being forwarded to another endpoint.
 
-HIBP breach data is attributed to **[Have I Been Pwned](https://haveibeenpwned.com/)** and is subject to its [Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/). Results link to HIBP and retain its name. Keep that attribution when sharing derived reports. Pwned Passwords is a separate planned integration, not part of this email lookup.
+HIBP breach data is attributed to **[Have I Been Pwned](https://haveibeenpwned.com/)** and is subject to its [Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/). Results link to HIBP and retain its name. Keep that attribution when sharing derived reports. Pwned Passwords is a separate, key-free integration described below, not part of this email lookup. Email subscription and attribution terms should not be assumed to describe the password service.
+
+## Pwned Passwords: check one password
+
+### Recommended: interactive, non-echoing input
+
+```sh
+./agentsearch -password-prompt
+./agentsearch -password-prompt -rt 15s -tt 2m -o password-results -rf cli,html
+```
+
+```powershell
+.\agentsearch.exe -password-prompt
+```
+
+Enter the complete password and press Enter. **No HIBP API key, subscription configuration, or services file is required.** An explicit password flag opts into this lookup; `services.hibp.enabled` controls email lookup only. Neither `HIBP_API_KEY` nor the configured email key is resolved or transmitted in password mode.
+
+The prompt uses `golang.org/x/term` for normal Unix terminals and Windows consoles. It disables terminal echo synchronously, suppresses all line-editor output, and restores the original terminal settings before returning on completion, input failure, Ctrl+C, SIGINT/SIGTERM, or the total timeout. It refuses redirected stdin/pipes: there is no password-file, batch, wordlist, or stdin scanning mode. The prompt callback is injectable for automated tests.
+
+Input is a non-empty single line; spaces, case, and Unicode are not trimmed or normalized before hashing. Enter terminates input and editing keys perform terminal editing. The prompt has a 4096-byte **input budget**, including Enter and editing/escape bytes (at most 4095 unedited password bytes). Exceeding it fails instead of silently accepting a truncated password. A canceled, blocked console reader may remain until this single-shot CLI exits; it cannot alter terminal settings or transmit a late result. Forced termination such as SIGKILL, console failure, or a process crash cannot guarantee terminal restoration.
+
+### Argument form: supported, not recommended for real secrets
+
+```sh
+# Public demonstration fixture only; never use this phrase as a real password.
+./agentsearch -password "correct horse battery staple"
+```
+
+**`-password` exposes its argument to shell history, process listings, terminal logs, and host auditing.** AgentSearch emits a warning but cannot erase those external records or reliably erase the immutable process argument. Prefer `-password-prompt`. Application headings, logs, filenames, results, and completion messages never use the password as their target label.
+
+Choose exactly one password flag. Do not combine it with `-u`, `-f`, `-email`, website networking options, or positional arguments. Allowed options are `-services`, `-rt`, `-tt`, `-o`, `-of`, and `-rf`; timeouts must be positive. Password-mode invalid flags, repeated argument input, and malformed flag values produce safe diagnostics without echoing supplied values. Unknown password output/report formats are configuration errors.
+
+### Local hashing and k-anonymity
+
+1. CLI input enters a shared, redacted `security.Secret` handle, never `AppConfig.Targets` or a generic result field.
+2. The application runner dispatches to the separate `PasswordSearcher` capability.
+3. The source computes SHA-1 locally with Go's standard `crypto/sha1`, encodes uppercase hexadecimal, and clears its application-owned plaintext buffer **before networking**. SHA-1 is required for this protocol, not recommended for storing passwords.
+4. The client sends only the first **five hexadecimal characters**:
+
+   ```text
+   GET https://api.pwnedpasswords.com/range/{five-character-SHA1-prefix}
+   Add-Padding: true
+   ```
+
+   There is no password, full hash, suffix, query string, request body, API-key header, authorization, or cookie in the lookup request. An identifying User-Agent and `Accept: text/plain` are sent. It makes one request after complete input, never incremental queries while typing.
+5. The remaining **35-character suffix** is compared locally against the returned range. Prefix, suffix, and full hash are not included in normalized results, diagnostics, filenames, or reports.
+
+This is **k-anonymity**, not zero disclosure or protection from a compromised endpoint/device. The service still sees a hash prefix and connection metadata such as the client IP. Padding requests reduce response-size disclosure, but do not prove anonymity. See the [official range API documentation](https://haveibeenpwned.com/API/v3#PwnedPasswords).
+
+The parser validates the entire bounded response, including records after a match. Each non-blank line must contain exactly a 35-hex-character suffix, a colon, and a non-negative decimal count that fits `uint64`. Suffix matching is case-insensitive. LF and CRLF are accepted; empty lines are ignored, but an empty/blank-only body is an error. Malformed lines, extra separators, signs/whitespace in counts, numeric overflow, duplicate suffixes, oversized lines, or responses over 2 MiB fail the lookup. Zero-count padding records never count as pwned. No fixed number of range rows is assumed.
+
+### Outcomes and output
+
+| Outcome | Normalized status | Safe metadata | Exit |
+| --- | --- | --- | --- |
+| **PWNED** | `found` | `pwned: "true"`, positive `occurrences` | `0` |
+| **NOT PWNED** | `not_found` | `pwned: "false"`, `occurrences: "0"` | `0` |
+| **ERROR** | `error` | Safe classification; no clean-password assertion | nonzero |
+
+HTTP 200 alone does not mean pwned. A valid range with no matching suffix, or a matching zero-count padding record, is a successful negative result. Unlike the email API, a range HTTP 404 is an **error**, not a negative lookup. Configuration, input, network, timeout, cancellation, API, and parse failures fail the command. Existing output-manager error-propagation limitations still apply.
+
+Human output includes the outcome, source, method `sha1-k-anonymity`, and occurrence count when available. JSON retains safe structured metadata; metadata values are strings for compatibility with the common model. The source is `pwned-passwords`, source type is `api`, target type is `password`, and target label is `[REDACTED]`. A positive exact corpus match uses the existing confidence value `100`; this is **not a probability of account compromise**. No `Result.Password` field is introduced.
+
+Common TXT, CLI, HTML, and DOCX paths render semantic details; CSV preserves its original nine columns and therefore does not carry the count/method metadata. Output names use `[REDACTED]`, never the input or its hash. Multiple password runs in the same directory overwrite that safe label; choose separate output/working directories to preserve results.
+
+**Corpus membership does not prove that any account was compromised.** NOT PWNED does not establish password strength, uniqueness, or safety; it only means no positive exact match was returned by the current corpus lookup. An API error means unknown, not safe.
+
+### Networking and optional configuration
+
+The password client is structurally separate from the authenticated email client, while sharing endpoint validation, safe error handling, and standard service transport. No website workers, proxies (including environment proxies), uTLS, cookie jar, or automatic retries are used. All redirects, including same-origin redirects, are rejected. Valid `Retry-After` on 429/503 is retained as seconds; no quota or aggressive retry schedule is invented. Respect the provider's current terms and wait before another lookup after a rate-limit response.
+
+Only if explicitly supplying `-services`, the following optional field selects an endpoint:
+
+```yaml
+services:
+  hibp:
+    enabled: false # Email setting; does not disable explicit password mode.
+    passwords_api_url: "https://api.pwnedpasswords.com/range"
+```
+
+```sh
+./agentsearch -password-prompt -services configs/services.yaml
+```
+
+Use the official URL in production. A custom endpoint is trusted configuration and receives the prefix. HTTPS is required except literal-loopback HTTP for local tests. The path must be `/range`; credentials, query strings, and fragments are rejected. There are no default mirrors, scraping, corpus downloads, caches, or offline databases in this stage.
 
 ## CLI reference
 
@@ -137,7 +222,7 @@ Run `./agentsearch -h` for current help. Durations use Go syntax such as `250ms`
 | `-p` | unset | Website proxy list |
 | `-w` | `50` | Website worker count; must be positive |
 | `-rl` | `500ms` | Website per-host delay; `0s` disables waiting |
-| `-rt` | `15s` | HTTP request timeout; positive in email mode |
+| `-rt` | `15s` | HTTP request timeout; positive in email/password modes |
 | `-tt` | `10m` | Deadline across the entire run, not per target |
 | `-o` | `output` | Result directory; see the report-directory limitation below |
 | `-of` | `json,csv,txt` | Comma-separated output formats |
@@ -149,7 +234,9 @@ Run `./agentsearch -h` for current help. Durations use Go syntax such as `250ms`
 | `-retries` | `2` | Website retry limit; see existing retry limitations below |
 | `-d` | `false` | Retained website deep-search stub; no implemented action |
 | `-email` | unset | Single HIBP email lookup, separate from website mode |
-| `-services` | `configs/services.yaml` | Service settings; valid only with `-email` |
+| `-password` | unset | One password range lookup; argument exposure warning; prefer prompt |
+| `-password-prompt` | `false` | Interactive non-echoing single-password input |
+| `-services` | `configs/services.yaml` for email | Loaded for email; optional explicit password endpoint override |
 
 ## Website databases and detection
 
@@ -254,10 +341,10 @@ All sources use the same `models.Result` and common writers. No HIBP-specific se
   site_name,target,url,found,confidence,status,duration_ms,error,final_url
   ```
 
-- **TXT:** compact per-result lines, including status and source display name. CSV and TXT do not include all structured metadata; use JSON for complete breach detail.
-- **CLI:** an English terminal summary and plain-text report.
+- **TXT:** per-result lines with status/source and normalized evidence/metadata. CSV retains the legacy projection; use JSON for complete structured detail.
+- **CLI:** an English terminal summary and plain-text report, including safe semantic details.
 - **HTML:** self-contained report with filters, status cards, evidence, and metadata. Remote text is escaped rather than interpreted as HTML.
-- **DOCX:** retained Word report generation, subject to UniOffice licensing. The license-dependent test skips explicitly if the license is unavailable.
+- **DOCX:** retained Word report generation with normalized semantic details, subject to UniOffice licensing. The license-dependent test skips explicitly if the license is unavailable.
 - **Summary JSON:** counts of emitted results, generated when report formats are requested. With HIBP, two returned breaches count as two found results, not two HTTP requests.
 
 For example, a HIBP match includes:
@@ -286,7 +373,7 @@ For example, a HIBP match includes:
 }
 ```
 
-Filenames are based on the target with unsafe filename characters replaced. **Known limitation:** result files and summary JSON honor `-o`, but CLI/HTML/DOCX generators still write into `output/`. Runs using the same target can overwrite previous output; use separate working/output directories when preserving investigations. Existing output/report managers log some write failures rather than propagating them to the process exit status.
+Website/email filenames are based on the target with unsafe filename characters replaced. Password outputs instead use the fixed `[REDACTED]` label. **Known limitation:** result files and summary JSON honor `-o`, but CLI/HTML/DOCX generators still write into `output/`. Runs using the same target can overwrite previous output; use separate working/output directories when preserving investigations. Existing output/report managers log some write failures rather than propagating them to the process exit status.
 
 ## Security considerations
 
@@ -295,7 +382,9 @@ Filenames are based on the target with unsafe filename characters replaced. **Kn
 - Only environment variable names belong in service YAML. Never commit keys or credential-bearing proxy files.
 - `security.Secret`, sensitive-key filtering, known-secret redaction, and URL-userinfo redaction protect normal diagnostic and result paths. HIBP errors contain safe classifications, not raw transport errors, bodies, or headers. The HIBP client does not log requests or responses.
 - Redaction is a safety net, not a general detector for every possible secret representation. Do not add HTTP request dumps or place secrets into evidence. Go strings also cannot be reliably erased from memory.
-- The typed model has password/password-hash categories for future integrations, with redacted formatting. There is currently no password command or lookup implementation.
+- Password input is kept in a separate shared secret handle; consuming the handle clears the application-owned byte buffer before the range request and on normal cleanup paths. Do not call `Reveal` for password dispatch or add plaintext to results. API-key callers retain explicit reusable access.
+- This is best-effort lifetime control, **not locked/secure memory**. Go runtime copies, prompt-library strings, original CLI arguments, swap, crash dumps, and host-level instrumentation cannot be guaranteed erased. Prompt mode avoids passing the password as an argument but does not secure a compromised host.
+- Password results contain a fixed redacted target and allowlisted semantic fields only. Password-hash input, offline lookups, and bulk scanning are not implemented. Protect occurrence metadata and any reports you keep.
 
 ## Architecture
 
@@ -304,12 +393,14 @@ CLI flags
   -> application composition and target parsing
   -> Runner -> source registry / capability dispatcher
        |-- websites -> workers -> host limiter -> existing HTTP client -> detector
-       `-- hibp -> email breach client -> standard service HTTP transport
+       |-- hibp -> authenticated email breach client -> standard service HTTP transport
+       `-- pwned-passwords -> local SHA-1 / secret consumption -> key-free range client
+                              -> local suffix match -> standard normalized result
   -> normalized, redacted results
   -> common storage and reports
 ```
 
-The website source supports username and legacy email-template searches. HIBP implements only `EmailSearcher`. Source registration is mode-specific, preventing accidental HIBP calls from legacy commands. Sources own their concurrency; one email request does not create a worker pool.
+The website source supports username and legacy email-template searches. HIBP has separate email (`EmailSearcher`) and password (`PasswordSearcher`) source types; neither implements the other capability. Source registration is mode-specific, preventing accidental HIBP calls from legacy commands. Sources own their concurrency; one email or password lookup does not create a worker pool. The password source consumes its shared input once; the CLI registers exactly one password provider, not multiple plaintext consumers.
 
 `app.NewRunner(registry).Search(ctx, target, emit)` is the source-neutral execution boundary. The dispatcher derives capabilities from small interfaces. It preserves partial results, stops on consumer errors, and does not import storage or reports. Models depend only on the standard library and the small security package. The network layer does not depend on concrete sources. HTTP clients and secrets are supplied at the application composition boundary.
 
@@ -323,7 +414,7 @@ go build ./cmd/agentsearch
 go build ./cmd/convert
 ```
 
-Tests use local HTTP servers and runtime-generated mock credentials, not real HIBP keys or external API calls. They cover HIBP response/error semantics, headers, encoding, redirect protection, cancellation, timeouts, redaction, normalized results, and CLI execution, alongside the website regression suite.
+Tests use local HTTP servers, runtime-generated email mock credentials, and obvious public password fixtures, not real HIBP keys, private passwords, or external API calls. They cover HIBP response/error semantics, headers, encoding, redirect protection, cancellation, timeouts, redaction, normalized results, and CLI execution, alongside the website regression suite. Password tests additionally cover independent SHA-1 vectors, exact request prefix/suffix boundaries, padding and strict range parsing, shared-buffer destruction, prompt injection/restoration, both password flags, and output/report leakage. Only the small `golang.org/x/term` module was added for cross-platform terminal input; no crypto, database, or API framework dependency was added.
 
 A repository-wide test checks Unicode Cyrillic characters in current text files, including comments, documentation, configurations, and fixtures. The maintained codebase and primary documentation are English-only. Git history and externally supplied target/database/response data are not rewritten or translated.
 
@@ -339,7 +430,7 @@ In addition to output-directory and error-propagation limitations noted above:
 - HIBP responses are bounded to 2 MiB. No pagination, local cache, email hash-range lookup, pastes, domain enumeration, or separate stealer-log API is implemented.
 - HIBP API behavior is tested against local contract fixtures, not certified against a live subscription during CI.
 
-See [ROADMAP.md](ROADMAP.md) for the next stages. Stage 3 is **Pwned Passwords API integration**, followed by separately scoped work on offline lookups, an HTTP API, and optional analysis. None of those planned features is implemented here.
+See [ROADMAP.md](ROADMAP.md) for the next stages. Stage 3 **Pwned Passwords API integration** is implemented. Next is **Stage 4 — Offline Pwned Passwords database**. Offline storage/download/index maintenance, an HTTP API, AI analysis, and additional external sources remain planned, not implemented.
 
 ## License
 

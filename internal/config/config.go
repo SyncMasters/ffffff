@@ -60,6 +60,9 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 	flags := flag.NewFlagSet("agentsearch", flag.ContinueOnError)
 	sensitiveArgs := false
 	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
 		name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
 		if name == "password" || name == "password-prompt" {
 			sensitiveArgs = true
