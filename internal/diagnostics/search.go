@@ -23,7 +23,7 @@ func Logger(ctx context.Context) *slog.Logger {
 }
 func Target(kind models.TargetType) string {
 	switch kind {
-	case models.TargetUsername, models.TargetEmail, models.TargetDomain, models.TargetPassword, models.TargetPasswordHash:
+	case models.TargetIP, models.TargetUsername, models.TargetEmail, models.TargetDomain, models.TargetPassword, models.TargetPasswordHash:
 		return string(kind)
 	}
 	return "unknown"
@@ -32,7 +32,7 @@ func Target(kind models.TargetType) string {
 // Never truncate arbitrary identifiers: a short identifier can itself be a key.
 func Source(name string) string {
 	switch name {
-	case "websites", "hibp", "pwned-passwords", "pwned-passwords-local", "securitytrails":
+	case "ipinfo", "websites", "hibp", "pwned-passwords", "pwned-passwords-local", "securitytrails":
 		return name
 	}
 	return "other"

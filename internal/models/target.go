@@ -14,6 +14,7 @@ import (
 type TargetType string
 
 const (
+	TargetIP           TargetType = "ip"
 	TargetDomain       TargetType = "domain"
 	TargetUsername     TargetType = "username"
 	TargetEmail        TargetType = "email"
@@ -23,7 +24,7 @@ const (
 
 func (t TargetType) Valid() bool {
 	switch t {
-	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash, TargetDomain:
+	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash, TargetDomain, TargetIP:
 		return true
 	}
 	return false
@@ -39,6 +40,9 @@ type Target struct {
 }
 
 func NewTarget(kind TargetType, value string) (Target, error) {
+	if kind == TargetIP {
+		return NewIPTarget(value)
+	}
 	if kind == TargetDomain {
 		return NewDomainTarget(value)
 	}

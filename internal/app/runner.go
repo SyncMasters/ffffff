@@ -81,6 +81,9 @@ func (a *App) Run(ctx context.Context) error {
 		if a.cfg.Mode == config.ModeEmail {
 			target, err = models.NewEmailTarget(value)
 		}
+		if a.cfg.Mode == config.ModeIP {
+			target, err = models.NewIPTarget(value)
+		}
 		if a.cfg.Mode == config.ModeDomain {
 			target, err = models.NewDomainTarget(value)
 		}
@@ -95,7 +98,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		if err := a.searchTarget(ctx, target); err != nil {
 			// Preserve the legacy website exit policy; service modes report failures.
-			if a.cfg.Mode == config.ModeEmail || a.cfg.Mode == config.ModeDomain {
+			if a.cfg.Mode == config.ModeEmail || a.cfg.Mode == config.ModeDomain || a.cfg.Mode == config.ModeIP {
 				return err
 			}
 		}

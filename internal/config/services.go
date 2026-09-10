@@ -10,6 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const DefaultIPinfoKeyEnv = "IPINFO_API_KEY"
+
 const DefaultHIBPKeyEnv = "HIBP_API_KEY"
 const DefaultSecurityTrailsKeyEnv = "SECURITYTRAILS_API_KEY"
 

@@ -118,6 +118,8 @@ func invoke(ctx context.Context, target models.Target, s Source, emit Emit) (err
 			diagnostics.Completed(ctx, "source_search", target.Type(), s.Name(), sourceStart, outcome)
 		}()
 		switch target.Type() {
+		case models.TargetIP:
+			err = s.(IPSearcher).SearchIP(ctx, target.Value(), deliver)
 		case models.TargetDomain:
 			err = s.(DomainSearcher).SearchDomain(ctx, target.Value(), deliver)
 		case models.TargetUsername:

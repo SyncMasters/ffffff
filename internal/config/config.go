@@ -23,6 +23,7 @@ type SearchMode string
 const (
 	ModeWebsites SearchMode = ""
 	ModeEmail    SearchMode = "email"
+	ModeIP       SearchMode = "ip"
 	ModeDomain   SearchMode = "domain"
 	ModePassword SearchMode = "password"
 )
@@ -100,15 +101,16 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		return nil
 	})
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -domain HOSTNAME | -password VALUE | -password-prompt [options]")
+		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -domain HOSTNAME | -ip ADDRESS | -password VALUE | -password-prompt [options]")
 		fmt.Fprintln(flags.Output(), "Website flags never query HIBP. Email lookups require enabled service settings and an API key.")
 		fmt.Fprintln(flags.Output(), "Password API lookups require no API key and transmit only five SHA-1 characters. Explicit local mode makes no requests.")
 		flags.PrintDefaults()
 	}
 	var (
+		ip       = flags.String("ip", "", "Passive IP intelligence through configured IPinfo Lite (no scanning)")
 		domain   = flags.String("domain", "", "Domain intelligence through configured external sources (not a website search)")
 		email    = flags.String("email", "", "Email breach lookup through HIBP (not a website search)")
-		services = flags.String("services", "configs/services.yaml", "Service configuration for -email, -domain or explicit password settings")
+		services = flags.String("services", "configs/services.yaml", "Service configuration for -email, -domain, -ip or explicit password settings")
 		u        = flags.String("u", "", "Target username or email")
 		f        = flags.String("f", "", "File with targets (one per line)")
 		s        = flags.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
@@ -138,9 +140,12 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		}
 		return nil, err
 	}
-	selectedEmail, selectedDomain := false, false
+	selectedEmail, selectedDomain, selectedIP := false, false, false
 	selectedPrompt, usedServices := false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "ip" {
+			selectedIP = true
+		}
 		if f.Name == "domain" {
 			selectedDomain = true
 		}
@@ -186,6 +191,20 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if *rt <= 0 || *tt <= 0 {
 			return nil, fmt.Errorf("password lookup timeouts must be positive")
 		}
+	} else if selectedIP {
+		allowed := map[string]bool{"ip": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if !allowed[f.Name] {
+				invalid = true
+			}
+		})
+		if invalid || flags.NArg() != 0 {
+			return nil, fmt.Errorf("IP mode accepts one address and only services, timeout, output and report options")
+		}
+		if *rt <= 0 || *tt <= 0 {
+			return nil, fmt.Errorf("IP lookup timeouts must be positive")
+		}
 	} else if selectedDomain {
 		allowed := map[string]bool{"domain": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
 		invalid := false
@@ -220,12 +239,12 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 	} else {
 
 		if usedServices {
-			return nil, fmt.Errorf("-services is only used with -email, -domain or password mode")
+			return nil, fmt.Errorf("-services is only used with -email, -domain, -ip or password mode")
 		}
 	}
 
-	if !selectedEmail && !selectedDomain && !selectedPassword && *u == "" && *f == "" {
-		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -domain HOSTNAME OR -password VALUE OR -password-prompt")
+	if !selectedEmail && !selectedDomain && !selectedIP && !selectedPassword && *u == "" && *f == "" {
+		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -domain HOSTNAME OR -ip ADDRESS OR -password VALUE OR -password-prompt")
 	}
 
 	cfg = &AppConfig{
@@ -253,6 +272,15 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if usedServices {
 			cfg.ServicesFile = *services
 		}
+	}
+	if selectedIP {
+		target, err := models.NewIPTarget(*ip)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Mode = ModeIP
+		cfg.ServicesFile = *services
+		cfg.Targets = []string{target.Value()}
 	}
 	if selectedDomain {
 		target, err := models.NewDomainTarget(*domain)

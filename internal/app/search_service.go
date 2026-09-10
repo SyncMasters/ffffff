@@ -53,6 +53,15 @@ func NewSearchTarget(kind, value string, password []byte) (models.Target, error)
 			}
 		}
 		return models.NewTarget(models.TargetUsername, value)
+	case models.TargetIP:
+		if len(password) != 0 {
+			return models.Target{}, ErrInvalidSearch
+		}
+		target, err := models.NewIPTarget(value)
+		if err != nil {
+			return models.Target{}, ErrInvalidSearch
+		}
+		return target, nil
 	case models.TargetDomain:
 		if len(password) != 0 {
 			return models.Target{}, ErrInvalidSearch
@@ -118,6 +127,11 @@ func NewSearchService(ctx context.Context, base config.AppConfig) (s *SearchServ
 		settings, e := config.LoadServices(base.ServicesFile)
 		if e != nil {
 			return s, errors.New("invalid service configuration")
+		}
+		if settings.Services["ipinfo"].Enabled {
+			if err = add(models.TargetIP, config.ModeIP); err != nil {
+				return s, err
+			}
 		}
 		if settings.Services["securitytrails"].Enabled {
 			if err = add(models.TargetDomain, config.ModeDomain); err != nil {

@@ -22,3 +22,9 @@ services:
     api_key_env: "SECURITYTRAILS_API_KEY"
     # Per-client request-start spacing, not a monthly/account-wide quota ledger.
     min_interval: "1s"
+
+  # IPinfo Lite requires a free account token; review API/data usage terms.
+  ipinfo:
+    enabled: false
+    api_url: "https://api.ipinfo.io/lite"
+    api_key_env: "IPINFO_API_KEY"

@@ -8,6 +8,7 @@ const (
 	ObservationUnknown  ObservationKind = "unknown"
 	ObservationWebsite  ObservationKind = "website_detection"
 	ObservationBreach   ObservationKind = "breach_association"
+	ObservationIP       ObservationKind = "ip_profile"
 	ObservationDomain   ObservationKind = "domain_profile"
 	ObservationPassword ObservationKind = "password_corpus"
 )
@@ -40,6 +41,8 @@ type EvidenceSemantics struct {
 func (r Result) EvidenceSemantics() EvidenceSemantics {
 	view := EvidenceSemantics{Kind: ObservationUnknown, Meaning: MeaningUnknown}
 	switch {
+	case r.Source == "ipinfo" && r.SourceType == SourceAPI && r.TargetType == TargetIP:
+		view.Kind = ObservationIP
 	case r.SourceType == SourceWebsite && (r.TargetType == TargetUsername || r.TargetType == TargetEmail):
 		view.Kind = ObservationWebsite
 	case r.Source == "hibp" && r.SourceType == SourceAPI && r.TargetType == TargetEmail:
