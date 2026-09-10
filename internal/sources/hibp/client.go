@@ -1,10 +1,11 @@
 // Package hibp integrates the official authenticated email breach API.
-// Password lookup is intentionally a separate, unimplemented capability.
+// Email breaches and password ranges use separate clients and capabilities.
 package hibp
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,10 +19,14 @@ const userAgent = "AgentSearch (https://github.com/johan-larp/AgentSearch)"
 
 // Client is safe for concurrent use. It does not log requests or retry failures.
 // Inject a standard, non-retrying client from network.NewServiceClient.
-type Client struct {
+type httpEndpoint struct {
 	http    *http.Client
 	baseURL string
-	key     security.Secret
+}
+
+type Client struct {
+	*httpEndpoint
+	key security.Secret
 }
 
 func NewClient(baseURL string, key security.Secret, httpClient *http.Client) (*Client, error) {
@@ -31,12 +36,22 @@ func NewClient(baseURL string, key security.Secret, httpClient *http.Client) (*C
 	if strings.ContainsAny(key.Reveal(), "\r\n") {
 		return nil, &Error{Kind: Unauthorized}
 	}
-	if httpClient == nil || httpClient.Timeout <= 0 {
-		return nil, fmt.Errorf("HIBP requires an HTTP client with a positive timeout")
-	}
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	endpoint, err := newHTTPEndpoint(baseURL, httpClient)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{httpEndpoint: endpoint, key: key}, nil
+}
+
+// newHTTPEndpoint shares transport safeguards without sharing authentication.
+func newHTTPEndpoint(baseURL string, httpClient *http.Client) (*httpEndpoint, error) {
+	if httpClient == nil || httpClient.Timeout <= 0 {
+		return nil, fmt.Errorf("HIBP requires an HTTP client with a positive timeout")
+	}
+
 	u, err := url.Parse(baseURL)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, fmt.Errorf("invalid HIBP base URL; credentials, queries and fragments are not allowed")
@@ -50,25 +65,67 @@ func NewClient(baseURL string, key security.Secret, httpClient *http.Client) (*C
 	// Reject every redirect, including same-origin redirects, before another request.
 	safeClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	safeClient.Jar = nil
-	return &Client{http: &safeClient, baseURL: strings.TrimRight(u.String(), "/"), key: key}, nil
+	return &httpEndpoint{http: &safeClient, baseURL: strings.TrimRight(u.String(), "/")}, nil
 }
 func (c *Client) get(ctx context.Context, path string) (*http.Response, error) {
+	return c.httpEndpoint.get(ctx, path, http.Header{"Hibp-Api-Key": []string{c.key.Reveal()}, "Accept": []string{"application/json"}})
+}
+func (e *httpEndpoint) get(ctx context.Context, path string, headers http.Header) (*http.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, requestError(ctx, err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.baseURL+path, nil)
 	if err != nil {
 		return nil, &Error{Kind: BadRequest}
 	}
-	req.Header.Set("hibp-api-key", c.key.Reveal())
+	req.Header = headers.Clone()
 	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := e.http.Do(req)
 	if err != nil {
 		return nil, requestError(ctx, err)
 	}
 	return resp, nil
 }
+
+func readResponse(ctx context.Context, resp *http.Response, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, requestError(ctx, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, &Error{Kind: InvalidResponse, StatusCode: resp.StatusCode}
+	}
+	return data, nil
+}
+
+const DefaultPasswordsURL = "https://api.pwnedpasswords.com/range"
+
+// PasswordClient cannot carry an email API key. Its only request operation
+// accepts an already-derived five-character prefix, never a password or hash.
+type PasswordClient struct{ *httpEndpoint }
+
+func NewPasswordClient(rangeURL string, httpClient *http.Client) (*PasswordClient, error) {
+	if rangeURL == "" {
+		rangeURL = DefaultPasswordsURL
+	}
+	endpoint, err := newHTTPEndpoint(rangeURL, httpClient)
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(endpoint.baseURL)
+	if err != nil || u.Path != "/range" || u.RawPath != "" {
+		return nil, fmt.Errorf("Pwned Passwords endpoint must end with /range")
+	}
+	return &PasswordClient{httpEndpoint: endpoint}, nil
+}
+func (c *PasswordClient) getRange(ctx context.Context, prefix string) (*http.Response, error) {
+	if !validHex(prefix, 5) {
+		return nil, &Error{Kind: BadRequest}
+	}
+	return c.httpEndpoint.get(ctx, "/"+strings.ToUpper(prefix), http.Header{"Accept": []string{"text/plain"}, "Add-Padding": []string{"true"}})
+}
+func (*PasswordClient) String() string   { return "hibp.PasswordClient" }
+func (*PasswordClient) GoString() string { return "hibp.PasswordClient" }
 
 func (*Client) String() string   { return "hibp.Client" }
 func (*Client) GoString() string { return "hibp.Client" }

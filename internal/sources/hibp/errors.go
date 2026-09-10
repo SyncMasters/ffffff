@@ -39,13 +39,13 @@ func (e *Error) Error() string {
 	case MissingKey:
 		return "HIBP email lookup requires an API key from the configured environment variable"
 	case Unauthorized:
-		return "HIBP rejected the API key"
+		return "HIBP denied authorization for this request"
 	case Forbidden:
-		return "HIBP denied access; check the subscription and request permissions"
+		return "HIBP denied access to this request"
 	case RateLimited:
 		return "HIBP request was rate limited"
 	case BadRequest:
-		return "HIBP email lookup requires a valid single email address"
+		return "HIBP rejected the request; check the input"
 	case Unavailable:
 		return "HIBP service is unavailable"
 	case Timeout:
@@ -55,7 +55,7 @@ func (e *Error) Error() string {
 	case Cancelled:
 		return "HIBP request was cancelled"
 	case InvalidResponse:
-		return "HIBP returned an invalid or oversized breach response"
+		return "HIBP returned an invalid or oversized response"
 	default:
 		return "HIBP returned an unexpected HTTP status"
 	}
@@ -111,4 +111,20 @@ func parseRetryAfter(value string, now time.Time) time.Duration {
 		return when.Sub(now)
 	}
 	return 0
+}
+
+// errorMetadata exports only allowlisted classifications, not remote headers.
+func errorMetadata(err error) map[string]string {
+	metadata := make(map[string]string)
+	var apiErr *Error
+	if errors.As(err, &apiErr) {
+		metadata["error_kind"] = string(apiErr.Kind)
+		if apiErr.StatusCode != 0 {
+			metadata["http_status"] = strconv.Itoa(apiErr.StatusCode)
+		}
+		if apiErr.RetryAfter > 0 {
+			metadata["retry_after_seconds"] = strconv.FormatInt(int64((apiErr.RetryAfter-1)/time.Second)+1, 10)
+		}
+	}
+	return metadata
 }

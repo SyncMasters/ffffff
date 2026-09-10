@@ -3,9 +3,7 @@ package hibp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -36,13 +34,11 @@ func (c *Client) Breaches(ctx context.Context, email string) ([]Breach, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, statusError(resp.StatusCode, resp.Header.Get("Retry-After"))
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBreachResponse+1))
+	data, err := readResponse(ctx, resp, maxBreachResponse)
 	if err != nil {
-		return nil, requestError(ctx, err)
+		return nil, err
 	}
-	if len(data) > maxBreachResponse {
-		return nil, &Error{Kind: InvalidResponse, StatusCode: resp.StatusCode}
-	}
+
 	var breaches []Breach
 	if err := json.Unmarshal(data, &breaches); err != nil || breaches == nil {
 		return nil, &Error{Kind: InvalidResponse, StatusCode: resp.StatusCode}
@@ -92,16 +88,7 @@ func (s *Source) SearchEmail(ctx context.Context, email string, emit sources.Emi
 	if err != nil {
 		result.Status = models.StatusError
 		result.Error = err.Error()
-		var apiErr *Error
-		if errors.As(err, &apiErr) {
-			result.Metadata = map[string]string{"error_kind": string(apiErr.Kind)}
-			if apiErr.StatusCode != 0 {
-				result.Metadata["http_status"] = strconv.Itoa(apiErr.StatusCode)
-			}
-			if apiErr.RetryAfter > 0 {
-				result.Metadata["retry_after_seconds"] = strconv.FormatInt(int64((apiErr.RetryAfter-1)/time.Second)+1, 10)
-			}
-		}
+		result.Metadata = errorMetadata(err)
 		if consumerErr := deliver(result); consumerErr != nil {
 			return consumerErr
 		}
