@@ -14,6 +14,7 @@ import (
 type TargetType string
 
 const (
+	TargetDomain       TargetType = "domain"
 	TargetUsername     TargetType = "username"
 	TargetEmail        TargetType = "email"
 	TargetPassword     TargetType = "password"
@@ -22,7 +23,7 @@ const (
 
 func (t TargetType) Valid() bool {
 	switch t {
-	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash:
+	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash, TargetDomain:
 		return true
 	}
 	return false
@@ -38,6 +39,9 @@ type Target struct {
 }
 
 func NewTarget(kind TargetType, value string) (Target, error) {
+	if kind == TargetDomain {
+		return NewDomainTarget(value)
+	}
 	if !kind.Valid() {
 		return Target{}, fmt.Errorf("unsupported target type")
 	}

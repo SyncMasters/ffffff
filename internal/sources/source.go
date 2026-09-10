@@ -19,6 +19,10 @@ type Source interface {
 // Partial results are valid even when the search subsequently returns an error.
 type Emit func(models.Result) error
 
+type DomainSearcher interface {
+	SearchDomain(context.Context, string, Emit) error
+}
+
 type UsernameSearcher interface {
 	SearchUsername(context.Context, string, Emit) error
 }
@@ -40,6 +44,9 @@ type PasswordHashSearcher interface {
 // cannot drift away from the operations actually provided.
 func Capabilities(s Source) []models.TargetType {
 	var out []models.TargetType
+	if _, ok := s.(DomainSearcher); ok {
+		out = append(out, models.TargetDomain)
+	}
 	if _, ok := s.(UsernameSearcher); ok {
 		out = append(out, models.TargetUsername)
 	}

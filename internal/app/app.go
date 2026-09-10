@@ -49,6 +49,9 @@ func NewWithContext(ctx context.Context, cfg *config.AppConfig) (*App, error) {
 		}
 		return application, err
 	}
+	if cfg.Mode == config.ModeDomain {
+		return newDomainApp(cfg)
+	}
 	if cfg.Mode == config.ModeEmail {
 		return newEmailApp(cfg)
 	}

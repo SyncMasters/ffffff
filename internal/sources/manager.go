@@ -60,6 +60,8 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 		}
 		var err error
 		switch target.Type() {
+		case models.TargetDomain:
+			err = s.(DomainSearcher).SearchDomain(ctx, target.Value(), deliver)
 		case models.TargetUsername:
 			err = s.(UsernameSearcher).SearchUsername(ctx, target.Value(), deliver)
 		case models.TargetEmail:

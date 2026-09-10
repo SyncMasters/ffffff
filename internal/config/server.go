@@ -35,7 +35,7 @@ func ParseServerArgs(args []string) (ServerConfig, error) {
 	f.DurationVar(&cfg.RequestTimeout, "request-timeout", cfg.RequestTimeout, "Search request deadline")
 	f.IntVar(&cfg.MaxConcurrent, "max-concurrent", cfg.MaxConcurrent, "Maximum admitted search requests")
 	f.StringVar(&cfg.Engine.SitesFile, "s", cfg.Engine.SitesFile, "Operator-owned sites file; empty disables username searches")
-	f.StringVar(&cfg.Engine.ServicesFile, "services", "", "Explicit HIBP services YAML; enabled email requires its environment key")
+	f.StringVar(&cfg.Engine.ServicesFile, "services", "", "Explicit services YAML; enabled email/domain providers require environment keys")
 	f.StringVar(&cfg.Engine.PasswordBackend, "password-backend", PasswordBackendAPI, "api or local; no fallback")
 	f.StringVar(&cfg.Engine.PasswordDatabasePath, "password-db", "", "Managed database root for local password mode")
 	f.IntVar(&cfg.Engine.Workers, "w", cfg.Engine.Workers, "Website workers per request")

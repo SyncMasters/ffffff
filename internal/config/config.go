@@ -23,6 +23,7 @@ type SearchMode string
 const (
 	ModeWebsites SearchMode = ""
 	ModeEmail    SearchMode = "email"
+	ModeDomain   SearchMode = "domain"
 	ModePassword SearchMode = "password"
 )
 
@@ -101,14 +102,15 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		return nil
 	})
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -password VALUE | -password-prompt [options]")
+		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -domain HOSTNAME | -password VALUE | -password-prompt [options]")
 		fmt.Fprintln(flags.Output(), "Website flags never query HIBP. Email lookups require enabled service settings and an API key.")
 		fmt.Fprintln(flags.Output(), "Password API lookups require no API key and transmit only five SHA-1 characters. Explicit local mode makes no requests.")
 		flags.PrintDefaults()
 	}
 	var (
+		domain   = flags.String("domain", "", "Domain intelligence through configured external sources (not a website search)")
 		email    = flags.String("email", "", "Email breach lookup through HIBP (not a website search)")
-		services = flags.String("services", "configs/services.yaml", "Service configuration for -email or explicit password settings")
+		services = flags.String("services", "configs/services.yaml", "Service configuration for -email, -domain or explicit password settings")
 		u        = flags.String("u", "", "Target username or email")
 		f        = flags.String("f", "", "File with targets (one per line)")
 		s        = flags.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
@@ -138,9 +140,12 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		}
 		return nil, err
 	}
-	selectedEmail := false
+	selectedEmail, selectedDomain := false, false
 	selectedPrompt, usedServices := false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "domain" {
+			selectedDomain = true
+		}
 		if f.Name == "email" {
 			selectedEmail = true
 		}
@@ -183,6 +188,20 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if *rt <= 0 || *tt <= 0 {
 			return nil, fmt.Errorf("password lookup timeouts must be positive")
 		}
+	} else if selectedDomain {
+		allowed := map[string]bool{"domain": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if !allowed[f.Name] {
+				invalid = true
+			}
+		})
+		if invalid || flags.NArg() != 0 {
+			return nil, fmt.Errorf("domain mode accepts one hostname and only services, timeout, output and report options")
+		}
+		if *rt <= 0 || *tt <= 0 {
+			return nil, fmt.Errorf("domain lookup timeouts must be positive")
+		}
 	} else if selectedEmail {
 		allowed := map[string]bool{"email": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
 		var unsupported string
@@ -203,12 +222,12 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 	} else {
 
 		if usedServices {
-			return nil, fmt.Errorf("-services is only used with -email or password mode")
+			return nil, fmt.Errorf("-services is only used with -email, -domain or password mode")
 		}
 	}
 
-	if !selectedEmail && !selectedPassword && *u == "" && *f == "" {
-		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -password VALUE OR -password-prompt")
+	if !selectedEmail && !selectedDomain && !selectedPassword && *u == "" && *f == "" {
+		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -domain HOSTNAME OR -password VALUE OR -password-prompt")
 	}
 
 	cfg = &AppConfig{
@@ -236,6 +255,15 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if usedServices {
 			cfg.ServicesFile = *services
 		}
+	}
+	if selectedDomain {
+		target, err := models.NewDomainTarget(*domain)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Mode = ModeDomain
+		cfg.ServicesFile = *services
+		cfg.Targets = []string{target.Value()}
 	}
 	if selectedEmail {
 		target, err := models.NewEmailTarget(*email)

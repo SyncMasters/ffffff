@@ -1,6 +1,6 @@
-# Loaded for -email, or when explicitly passed with password mode.
-# Legacy -u/-f searches ignore it; enabled controls email lookup only.
-# Set enabled to true to allow HIBP email lookups.
+# Loaded for -email/-domain, or when explicitly passed to password mode/server.
+# Legacy -u/-f searches ignore it. Providers default to disabled.
+# Each mode initializes only its compatible configured sources.
 # Only an environment variable NAME belongs here, never a key value.
 services:
   hibp:
@@ -13,3 +13,12 @@ services:
     # Optional managed local root; it never selects the backend automatically.
     # Relative paths use the working directory. CLI -password-db overrides this.
     # passwords_database_path: "./pwned-db"
+
+  # Requires an API subscription/license permitting your internal security use.
+  # No public redistribution or third-party service rights are implied.
+  securitytrails:
+    enabled: false
+    api_url: "https://api.securitytrails.com/v1"
+    api_key_env: "SECURITYTRAILS_API_KEY"
+    # Per-client request-start spacing, not a monthly/account-wide quota ledger.
+    min_interval: "1s"

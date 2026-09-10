@@ -44,6 +44,9 @@ func (a *App) Run(ctx context.Context) error {
 		if a.cfg.Mode == config.ModeEmail {
 			target, err = models.NewEmailTarget(value)
 		}
+		if a.cfg.Mode == config.ModeDomain {
+			target, err = models.NewDomainTarget(value)
+		}
 		if err != nil {
 			return err
 		}
@@ -54,9 +57,13 @@ func (a *App) Run(ctx context.Context) error {
 		default:
 		}
 		if err := a.searchTarget(ctx, target); err != nil {
-			slog.Error("search target failed", "target", target, "error", err)
-			// Preserve the legacy website exit policy; new email mode reports failures.
-			if a.cfg.Mode == config.ModeEmail {
+			if a.cfg.Mode == config.ModeDomain {
+				slog.Error("search target failed", "target_type", models.TargetDomain, "error", err)
+			} else {
+				slog.Error("search target failed", "target", target, "error", err)
+			}
+			// Preserve the legacy website exit policy; service modes report failures.
+			if a.cfg.Mode == config.ModeEmail || a.cfg.Mode == config.ModeDomain {
 				return err
 			}
 		}
@@ -65,7 +72,9 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) searchTarget(ctx context.Context, target models.Target) error {
-	if target.Type() == models.TargetPassword {
+	if target.Type() == models.TargetDomain {
+		slog.Info("starting search", "target_type", models.TargetDomain)
+	} else if target.Type() == models.TargetPassword {
 		slog.Info("starting search", "target", target)
 	} else {
 		slog.Info("starting search", "target", target, "workers", a.cfg.Workers)
@@ -84,7 +93,11 @@ func (a *App) searchTarget(ctx context.Context, target models.Target) error {
 		return nil
 	})
 	elapsed := time.Since(start)
-	slog.Info("search completed", "target", target, "elapsed", elapsed.Round(time.Second), "results", len(results))
+	if target.Type() == models.TargetDomain {
+		slog.Info("search completed", "target_type", models.TargetDomain, "elapsed", elapsed.Round(time.Second), "results", len(results))
+	} else {
+		slog.Info("search completed", "target", target, "elapsed", elapsed.Round(time.Second), "results", len(results))
+	}
 	if len(a.cfg.ReportFormats) > 0 {
 		if err := report.WriteAll(a.cfg.OutputDir, a.cfg.ReportFormats, target.String(), results, elapsed); err != nil {
 			slog.Error("report generation failed", "error", err)
@@ -93,6 +106,10 @@ func (a *App) searchTarget(ctx context.Context, target models.Target) error {
 	return searchErr
 }
 func (a *App) logResult(res models.Result) {
+	if res.TargetType == models.TargetDomain {
+		slog.Info("domain observation", "source", res.Source, "target_type", res.TargetType, "status", res.Status, "duration", res.Duration, "error_kind", res.Metadata["error_kind"])
+		return
+	}
 	if res.TargetType == models.TargetPassword {
 		slog.Info(res.OutcomeLabel(), "source", res.SiteName, "method", res.Metadata["method"], "occurrences", res.Metadata["occurrences"], "error", res.Error)
 		return

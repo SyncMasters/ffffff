@@ -11,6 +11,7 @@ import (
 )
 
 const DefaultHIBPKeyEnv = "HIBP_API_KEY"
+const DefaultSecurityTrailsKeyEnv = "SECURITYTRAILS_API_KEY"
 
 // ServicesConfig is an opt-in configuration layer. Loading it neither registers
 // providers nor reads environment variables or makes network requests.
@@ -18,6 +19,8 @@ type ServicesConfig struct {
 	Services map[string]ServiceConfig `yaml:"services"`
 }
 type ServiceConfig struct {
+	// MinInterval is parsed only by an enabled/selected provider using pacing.
+	MinInterval           string `yaml:"min_interval"`
 	PasswordsDatabasePath string `yaml:"passwords_database_path"`
 	PasswordsAPIURL       string `yaml:"passwords_api_url"`
 	Enabled               bool   `yaml:"enabled"`
