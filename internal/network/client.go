@@ -24,29 +24,7 @@ type ClientConfig struct {
 // Without proxies, it shares a connection-pooled transport.
 // With proxies, it uses a rotating transport.
 func NewOptimizedClient(cfg ClientConfig, ua *UARotator, pr *ProxyRotator) *http.Client {
-	baseTransport := &http.Transport{
-		MaxIdleConns:          cfg.MaxIdleConns,
-		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
-		MaxConnsPerHost:       cfg.MaxIdleConnsPerHost,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
-		ResponseHeaderTimeout: cfg.RequestTimeout / 2,
-		ExpectContinueTimeout: 1 * time.Second,
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: false,
-			MinVersion:         tls.VersionTLS12,
-		},
-		ForceAttemptHTTP2: true,
-	}
-
-	// Enable uTLS when requested.
-	if cfg.UseUTLS {
-		EnableUTLS(baseTransport, true)
-	}
+	baseTransport := newTransport(cfg)
 
 	baseClient := &http.Client{
 		Timeout:   cfg.RequestTimeout,
@@ -120,4 +98,43 @@ func (t *proxyRotatorTransport) RoundTrip(req *http.Request) (*http.Response, er
 	}
 
 	return tr.RoundTrip(req)
+}
+
+// newTransport shares connection tuning without imposing website retry policy.
+func newTransport(cfg ClientConfig) *http.Transport {
+	baseTransport := &http.Transport{
+		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxIdleConnsPerHost,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: cfg.RequestTimeout / 2,
+		ExpectContinueTimeout: 1 * time.Second,
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: false,
+			MinVersion:         tls.VersionTLS12,
+		},
+		ForceAttemptHTTP2: true,
+	}
+
+	// Enable uTLS when requested.
+	if cfg.UseUTLS {
+		EnableUTLS(baseTransport, true)
+	}
+
+	return baseTransport
+}
+
+// NewServiceClient uses the shared standard transport without website proxies,
+// browser fingerprints, random User-Agents or automatic retries. Services own
+// their authentication, redirect and rate-limit policies.
+func NewServiceClient(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	return &http.Client{Timeout: timeout, Transport: newTransport(ClientConfig{RequestTimeout: timeout, MaxIdleConns: 20, MaxIdleConnsPerHost: 2})}
 }
