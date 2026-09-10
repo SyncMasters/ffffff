@@ -11,14 +11,14 @@ import (
 	"github.com/johan-larp/agentsearch/internal/security"
 )
 
-// NewRetryableClient оборачивает http.Client в retryablehttp.Client.
-// Автоматически повторяет запросы при:
+// NewRetryableClient wraps an HTTP client with retryablehttp.
+// It retries eligible failures:
 //   - 429 Too Many Requests
 //   - 5xx Server Errors
 //   - network timeouts
 //   - connection errors
 //
-// Использует exponential backoff с jitter для снижения нагрузки на сервер.
+// Uses the library's default backoff policy.
 func NewRetryableClient(base *http.Client, maxRetries int) *http.Client {
 	if maxRetries <= 0 {
 		maxRetries = 2
@@ -29,9 +29,9 @@ func NewRetryableClient(base *http.Client, maxRetries int) *http.Client {
 	retryClient.RetryMax = maxRetries
 	retryClient.RetryWaitMin = 500 * time.Millisecond
 	retryClient.RetryWaitMax = 5 * time.Second
-	retryClient.Logger = nil // отключаем внутренний логгер, используем slog
+	retryClient.Logger = nil // Disable the library logger; diagnostics use slog.
 
-	// Кастомный checker: логируем причины retry
+	// Log retry decisions without exposing URL credentials.
 	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		shouldRetry, checkErr := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if shouldRetry && resp != nil {
@@ -48,6 +48,6 @@ func NewRetryableClient(base *http.Client, maxRetries int) *http.Client {
 		return shouldRetry, checkErr
 	}
 
-	// Оборачиваем стандартный RoundTripper для совместимости
+	// Expose the wrapper as a standard HTTP client.
 	return retryClient.StandardClient()
 }

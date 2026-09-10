@@ -10,18 +10,18 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// Writer абстрагирует запись результатов в конкретный формат.
+// Writer abstracts a result output format.
 type Writer interface {
 	Write(res models.Result) error
 	Close() error
 }
 
-// Manager управляет одновременной записью в несколько форматов (json, csv, txt).
+// Manager writes results to the configured output formats.
 type Manager struct {
 	writers []Writer
 }
 
-// NewManager создает writer'ы для каждого указанного формата.
+// NewManager creates one writer for each requested format.
 func NewManager(dir string, formats []string, target string) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create output dir: %w", err)
@@ -56,7 +56,7 @@ func NewManager(dir string, formats []string, target string) (*Manager, error) {
 	return &Manager{writers: writers}, nil
 }
 
-// Write дублирует результат во все активные writer'ы.
+// Write sends a result to every active writer.
 func (m *Manager) Write(res models.Result) {
 	for _, w := range m.writers {
 		if err := w.Write(res); err != nil {
@@ -65,7 +65,7 @@ func (m *Manager) Write(res models.Result) {
 	}
 }
 
-// Close корректно завершает все writer'ы (флашит буферы, закрывает файлы).
+// Close flushes and closes all writers.
 func (m *Manager) Close() {
 	for _, w := range m.writers {
 		if err := w.Close(); err != nil {
@@ -74,7 +74,7 @@ func (m *Manager) Close() {
 	}
 }
 
-// sanitizeFilename заменяет недопустимые символы в имени файла.
+// sanitizeFilename replaces characters that are unsafe in filenames.
 func sanitizeFilename(name string) string {
 	replacer := strings.NewReplacer(
 		"/", "_",

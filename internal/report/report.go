@@ -14,12 +14,12 @@ import (
 	"github.com/johan-larp/agentsearch/internal/security"
 )
 
-// Generator создаёт отчёт по результатам поиска.
+// Generator renders normalized search results.
 type Generator interface {
 	Generate(target string, results []models.Result, duration time.Duration) (string, error)
 }
 
-// Summary содержит агрегированную статистику по результатам.
+// Summary aggregates search results.
 type Summary struct {
 	Target       string
 	Total        int
@@ -33,7 +33,7 @@ type Summary struct {
 	BlockedHosts []string
 }
 
-// SiteStat — статистика по одному сайту.
+// SiteStat contains per-source statistics; the name is retained for compatibility.
 type SiteStat struct {
 	Name       string
 	Found      int
@@ -41,7 +41,7 @@ type SiteStat struct {
 	AvgLatency time.Duration
 }
 
-// TagStat — статистика по тегу.
+// TagStat contains aggregate statistics for a tag.
 type TagStat struct {
 	Tag         string
 	Total       int
@@ -50,7 +50,7 @@ type TagStat struct {
 	SuccessRate float64
 }
 
-// BuildSummary агрегирует результаты в сводку.
+// BuildSummary aggregates normalized results.
 func BuildSummary(target string, results []models.Result, duration time.Duration) Summary {
 	target, results = normalizeResults(target, results)
 	s := Summary{
@@ -77,7 +77,7 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 			s.Errors++
 		}
 
-		// Агрегация по сайтам
+		// Aggregate by display source.
 		st, ok := siteMap[r.SiteName]
 		if !ok {
 			st = &SiteStat{Name: r.SiteName}
@@ -110,7 +110,7 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 	return s
 }
 
-// WriteAll генерирует все запрошенные форматы отчётов.
+// WriteAll generates the requested report formats.
 func WriteAll(dir string, formats []string, target string, results []models.Result, duration time.Duration) error {
 	target, results = normalizeResults(target, results)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -141,7 +141,7 @@ func WriteAll(dir string, formats []string, target string, results []models.Resu
 		slog.Info("report generated", "format", f, "path", path)
 	}
 
-	// Также пишем summary JSON
+	// Also export a JSON summary.
 	summaryPath := filepath.Join(dir, fmt.Sprintf("%s_summary.json", sanitizeFilename(target)))
 	if err := writeSummaryJSON(summaryPath, summary); err != nil {
 		slog.Error("write summary failed", "error", err)

@@ -7,15 +7,15 @@ import (
 	"time"
 )
 
-// HostLimiter реализует задержку между запросами к одному хосту,
-// чтобы минимизировать 429 Too Many Requests и баны.
+// HostLimiter spaces requests to each host.
+// Callers can cancel a pending delay using WaitContext.
 type HostLimiter struct {
 	delay       time.Duration
 	mu          sync.Mutex
 	lastRequest map[string]time.Time
 }
 
-// NewHostLimiter создает лимитер. delay=0 отключает ограничения.
+// NewHostLimiter creates a limiter; zero delay disables waiting.
 func NewHostLimiter(delay time.Duration) *HostLimiter {
 	return &HostLimiter{
 		delay:       delay,
@@ -23,8 +23,7 @@ func NewHostLimiter(delay time.Duration) *HostLimiter {
 	}
 }
 
-// Wait блокирует вызывающую горутину до тех пор, пока не пройдет
-// достаточно времени с момента предыдущего запроса к этому хосту.
+// Wait blocks until the minimum interval for this host has elapsed.
 func (rl *HostLimiter) Wait(rawURL string) { _ = rl.WaitContext(context.Background(), rawURL) }
 
 // WaitContext is the cancellation-aware adapter used by website searches.

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Встроенный набор современных User-Agent для ротации.
+// Built-in User-Agent values for website requests.
 var defaultUserAgents = []string{
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -19,14 +19,14 @@ var defaultUserAgents = []string{
 	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
 }
 
-// UARotator предоставляет потокобезопасную ротацию User-Agent.
+// UARotator provides concurrency-safe User-Agent selection.
 type UARotator struct {
 	agents []string
 	mu     sync.RWMutex
 	r      *rand.Rand
 }
 
-// NewUARotator создает ротатор. Если filePath задан, дополняет список из файла.
+// NewUARotator optionally extends the built-in list from a file.
 func NewUARotator(filePath string) (*UARotator, error) {
 	ua := &UARotator{
 		agents: make([]string, len(defaultUserAgents)),
@@ -59,7 +59,7 @@ func (ua *UARotator) loadFromFile(path string) error {
 	return scanner.Err()
 }
 
-// GetRandom возвращает случайный User-Agent.
+// GetRandom returns a random User-Agent.
 func (ua *UARotator) GetRandom() string {
 	ua.mu.Lock()
 	defer ua.mu.Unlock()

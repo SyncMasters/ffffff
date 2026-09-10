@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-// ProxyRotator реализует atomic-кольцевую ротацию прокси из файла.
-// Поддерживает http://, https://, socks5://, socks5h://.
+// ProxyRotator rotates a file-backed proxy list using an atomic counter.
+// Supported schemes: http, https, socks5 and socks5h.
 type ProxyRotator struct {
 	proxies []string
 	index   atomic.Uint64
 }
 
-// NewProxyRotator загружает список прокси. Пустые строки и комментарии игнорируются.
+// NewProxyRotator loads proxies, ignoring blank lines and comments.
 func NewProxyRotator(filePath string) (*ProxyRotator, error) {
 	if filePath == "" {
 		return &ProxyRotator{}, nil
@@ -36,7 +36,7 @@ func NewProxyRotator(filePath string) (*ProxyRotator, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// Если схема не указана — считаем HTTP-прокси по умолчанию
+		// Assume HTTP when the scheme is omitted.
 		if !strings.Contains(line, "://") {
 			line = "http://" + line
 		}
@@ -48,12 +48,12 @@ func NewProxyRotator(filePath string) (*ProxyRotator, error) {
 	return &ProxyRotator{proxies: list}, nil
 }
 
-// HasProxies возвращает true, если список прокси не пуст.
+// HasProxies reports whether the proxy list is nonempty.
 func (pr *ProxyRotator) HasProxies() bool {
 	return len(pr.proxies) > 0
 }
 
-// GetNext возвращает следующий прокси в кольце (потокобезопасно).
+// GetNext returns the next proxy safely across goroutines.
 func (pr *ProxyRotator) GetNext() string {
 	if len(pr.proxies) == 0 {
 		return ""
@@ -62,9 +62,9 @@ func (pr *ProxyRotator) GetNext() string {
 	return pr.proxies[idx%uint64(len(pr.proxies))]
 }
 
-// FetchProxies получает список прокси с API ProxyScrape.
-// Возвращает слайс строк формата "ip:port" (протокол обрезается).
-// При любой ошибке логирует её и возвращает пустой слайс.
+// FetchProxies retrieves the public ProxyScrape list.
+// It returns host:port strings with the scheme removed.
+// Errors are logged and return an empty list.
 func FetchProxies() []string {
 	const apiURL = "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text"
 
@@ -89,8 +89,8 @@ func FetchProxies() []string {
 		if line == "" {
 			continue
 		}
-		// API возвращает protocolipport (например http://1.2.3.4:8080).
-		// Обрезаем протокол, оставляя только ip:port.
+		// ProxyScrape returns scheme://host:port entries.
+		// Retain only host:port.
 		if idx := strings.Index(line, "://"); idx != -1 {
 			line = line[idx+3:]
 		}

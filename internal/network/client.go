@@ -11,18 +11,18 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-// ClientConfig содержит тюнинговые параметры HTTP-клиента.
+// ClientConfig holds HTTP connection and timeout settings.
 type ClientConfig struct {
 	RequestTimeout      time.Duration
 	MaxIdleConns        int
 	MaxIdleConnsPerHost int
-	UseUTLS             bool // включить JA3 fingerprint spoofing
-	MaxRetries          int  // число retry при 429/5xx
+	UseUTLS             bool // Enable experimental uTLS fingerprints.
+	MaxRetries          int  // Retry count for eligible failures.
 }
 
-// NewOptimizedClient создает http.Client с настроенным Transport.
-// Если прокси не используются — возвращает единый Transport с агрессивным пулом соединений.
-// Если прокси используются — оборачивает в кастомный RoundTripper.
+// NewOptimizedClient constructs the legacy website HTTP client.
+// Without proxies, it shares a connection-pooled transport.
+// With proxies, it uses a rotating transport.
 func NewOptimizedClient(cfg ClientConfig, ua *UARotator, pr *ProxyRotator) *http.Client {
 	baseTransport := &http.Transport{
 		MaxIdleConns:          cfg.MaxIdleConns,
@@ -43,7 +43,7 @@ func NewOptimizedClient(cfg ClientConfig, ua *UARotator, pr *ProxyRotator) *http
 		ForceAttemptHTTP2: true,
 	}
 
-	// Включаем uTLS (JA3 spoofing) если запрошено
+	// Enable uTLS when requested.
 	if cfg.UseUTLS {
 		EnableUTLS(baseTransport, true)
 	}
@@ -53,36 +53,36 @@ func NewOptimizedClient(cfg ClientConfig, ua *UARotator, pr *ProxyRotator) *http
 		Transport: baseTransport,
 	}
 
-	// Оборачиваем в retryable client
+	// Wrap direct requests with retryablehttp.
 	client := NewRetryableClient(baseClient, cfg.MaxRetries)
 
-	// Без прокси — готовый клиент
+	// Use the shared client when no proxies are configured.
 	if !pr.HasProxies() {
 		return client
 	}
 
-	// С прокси — клонируем Transport под каждый запрос
+	// Clone the transport for each proxied request.
 	return &http.Client{
 		Timeout: cfg.RequestTimeout,
 		Transport: &proxyRotatorTransport{
 			base:    baseTransport,
 			rotator: pr,
 			ua:      ua,
-			client:  client, // для retry logic
+			client:  client, // Retained retry client; the proxy transport currently bypasses it.
 		},
 	}
 }
 
-// proxyRotatorTransport реализует http.RoundTripper с динамической ротацией прокси.
+// proxyRotatorTransport selects a proxy for each request.
 type proxyRotatorTransport struct {
 	base    *http.Transport
 	rotator *ProxyRotator
 	ua      *UARotator
-	client  *http.Client // retryable client для fallback
+	client  *http.Client // Retained for compatibility; currently unused by RoundTrip.
 }
 
 func (t *proxyRotatorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Ротация User-Agent на уровне Transport
+	// Rotate User-Agent headers for proxied requests.
 	if t.ua != nil {
 		req.Header.Set("User-Agent", t.ua.GetRandom())
 	}
@@ -97,7 +97,7 @@ func (t *proxyRotatorTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return t.base.RoundTrip(req)
 	}
 
-	// Клонируем базовый Transport для изоляции настроек прокси
+	// Isolate each request's proxy settings in a cloned transport.
 	tr := t.base.Clone()
 
 	switch proxyURL.Scheme {

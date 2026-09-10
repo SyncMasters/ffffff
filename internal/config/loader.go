@@ -9,19 +9,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadSites загружает базу сайтов из YAML или JSON.
-// Поддерживает форматы:
-//  1. Прямой массив []models.SiteConfig
+// LoadSites loads a YAML or JSON site database.
+// Supported forms:
+//  1. A native []models.SiteConfig array
 //  2. Maigret: { "sites": { "Name": { ... } } }
 //  3. Maigret: { "sites": [ { ... } ] }
-//  4. Sherlock: { "Name": { ... } }  (без обёртки sites)
+//  4. Sherlock: { "Name": { ... } } without a sites wrapper
 func LoadSites(path string) ([]models.SiteConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read sites file: %w", err)
 	}
 
-	// Попытка 1: прямой массив YAML/JSON
+	// Try a native YAML/JSON array.
 	var direct []models.SiteConfig
 	if err := yaml.Unmarshal(data, &direct); err == nil && len(direct) > 0 && (direct[0].URL != "" || direct[0].Name != "") {
 		return filterEnabled(direct), nil
@@ -37,7 +37,7 @@ func LoadSites(path string) ([]models.SiteConfig, error) {
 		return sites, err
 	}
 
-	// Попытка 2: объект — определяем, есть ли поле sites
+	// Look for a sites wrapper.
 	var hasSites struct {
 		Sites json.RawMessage `json:"sites" yaml:"sites"`
 	}
@@ -45,7 +45,7 @@ func LoadSites(path string) ([]models.SiteConfig, error) {
 	isYAML := yaml.Unmarshal(data, &hasSites) == nil && len(hasSites.Sites) > 0
 
 	if isJSON || isYAML {
-		// Maigret-формат: sites может быть map или array
+		// The sites field may be a map or an array.
 		var mapWrap struct {
 			Sites map[string]models.SiteConfig `json:"sites" yaml:"sites"`
 		}
@@ -67,7 +67,7 @@ func LoadSites(path string) ([]models.SiteConfig, error) {
 		}
 	}
 
-	// Попытка 3: Sherlock-формат (плоский объект, ключ = имя сайта)
+	// Try a flat map keyed by site name.
 	var sherlockMap map[string]models.SiteConfig
 	if json.Unmarshal(data, &sherlockMap) == nil && len(sherlockMap) > 0 {
 		return convertMapToSlice(sherlockMap), nil
@@ -95,7 +95,7 @@ func convertMapToSlice(m map[string]models.SiteConfig) []models.SiteConfig {
 		if s.Name == "" {
 			s.Name = name
 		}
-		// Миграция устаревших полей Maigret → наш формат
+		// Infer the check type from available detection fields.
 		if s.CheckType == "" {
 			switch {
 			case s.ErrorCode != 0:

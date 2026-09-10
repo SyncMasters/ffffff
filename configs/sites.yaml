@@ -1,6 +1,6 @@
 # AgentSearch Site Database (YAML)
-# Совместим с концепциями Sherlock / Maigret.
-# Поддерживаемые check_type: status_code | message | response_url | header
+# Uses the native site schema with Sherlock/Maigret conversion support.
+# Supported check_type values: status_code | message | response_url | header
 
 - name: GitHub
   url: https://github.com/{username}

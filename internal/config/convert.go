@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// MergeAndConvert объединяет несколько JSON-файлов (Sherlock / Maigret) в единый YAML.
+// MergeAndConvert merges Sherlock/Maigret JSON databases into one YAML file.
 func MergeAndConvert(output string, inputs ...string) error {
 	merged := make(map[string]models.SiteConfig)
 
@@ -21,12 +21,12 @@ func MergeAndConvert(output string, inputs ...string) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 
-		// Определяем формат по наличию обёртки "sites"
+		// Detect Maigret by its sites wrapper.
 		var wrapper struct {
 			Sites json.RawMessage `json:"sites"`
 		}
 		if err := json.Unmarshal(data, &wrapper); err == nil && len(wrapper.Sites) > 0 {
-			// Maigret-формат
+			// Maigret database.
 			sites, err := parseMaigret(wrapper.Sites)
 			if err != nil {
 				return fmt.Errorf("parse maigret %s: %w", path, err)
@@ -35,7 +35,7 @@ func MergeAndConvert(output string, inputs ...string) error {
 			continue
 		}
 
-		// Sherlock-формат (плоский объект)
+		// Sherlock uses a flat object.
 		sites, err := parseSherlock(data)
 		if err != nil {
 			return fmt.Errorf("parse sherlock %s: %w", path, err)
@@ -43,11 +43,11 @@ func MergeAndConvert(output string, inputs ...string) error {
 		mergeInto(merged, sites)
 	}
 
-	// Преобразуем map в отсортированный слайс, отбрасывая записи без URL
+	// Sort the merged records and exclude entries without a URL.
 	var list []models.SiteConfig
 	for _, s := range merged {
 		if strings.TrimSpace(s.URL) == "" {
-			continue // пропускаем engine-only сайты без прямого URL
+			continue // Skip engine-only entries without a direct URL.
 		}
 		list = append(list, s)
 	}
@@ -66,7 +66,7 @@ func MergeAndConvert(output string, inputs ...string) error {
 	return nil
 }
 
-// parseSherlock парсит плоский JSON Sherlock.
+// parseSherlock decodes a flat Sherlock JSON database.
 func parseSherlock(data []byte) (map[string]models.SiteConfig, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -80,14 +80,14 @@ func parseSherlock(data []byte) (map[string]models.SiteConfig, error) {
 		}
 		var s sherlockSite
 		if err := json.Unmarshal(body, &s); err != nil {
-			continue // пропускаем битые записи
+			continue // Skip malformed entries.
 		}
 		result[name] = s.toSiteConfig(name)
 	}
 	return result, nil
 }
 
-// parseMaigret парсит обёрнутый JSON Maigret.
+// parseMaigret decodes the sites object in a Maigret database.
 func parseMaigret(sitesRaw json.RawMessage) (map[string]models.SiteConfig, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(sitesRaw, &raw); err != nil {
@@ -110,9 +110,9 @@ func mergeInto(dst, src map[string]models.SiteConfig) {
 		key := k
 		if existing, ok := dst[key]; ok {
 			if existing.URL == v.URL {
-				continue // полный дубликат
+				continue // Exact duplicate.
 			}
-			// Конфликт имени, но разные URL — формируем уникальный ключ и обновляем имя
+			// Distinguish sites with the same name but different URLs.
 			suffix := sanitizeKey(v.URL)
 			key = fmt.Sprintf("%s_%s", k, suffix)
 			v.Name = fmt.Sprintf("%s (%s)", v.Name, suffix)
@@ -165,7 +165,7 @@ func (s *sherlockSite) toSiteConfig(name string) models.SiteConfig {
 		cfg.Tags = append(cfg.Tags, "nsfw")
 	}
 
-	// errorMsg может быть строкой или массивом
+	// errorMsg can be a string or an array.
 	var msgs []string
 	if len(s.ErrorMsg) > 0 {
 		if s.ErrorMsg[0] == '[' {
@@ -180,7 +180,7 @@ func (s *sherlockSite) toSiteConfig(name string) models.SiteConfig {
 	}
 	cfg.AbsenceStrs = msgs
 
-	// Для status_code выставляем error_code если не задан
+	// Default status-code absence checks to HTTP 404.
 	if cfg.CheckType == "status_code" && cfg.ErrorCode == 0 {
 		cfg.ErrorCode = 404
 	}
@@ -196,8 +196,8 @@ type maigretSite struct {
 	URLProbe          string            `json:"urlProbe"`
 	CheckType         string            `json:"checkType"`
 	AbsenceStrs       []string          `json:"absenceStrs"`
-	PresenceStrs      []string          `json:"presenceStrs"`  // правильное написание
-	PresenseStrs      []string          `json:"presenseStrs"`  // опечатка в оригинале
+	PresenceStrs      []string          `json:"presenceStrs"` // Canonical spelling.
+	PresenseStrs      []string          `json:"presenseStrs"` // Legacy upstream misspelling.
 	Headers           map[string]string `json:"headers"`
 	Disabled          bool              `json:"disabled"`
 	UsernameClaimed   string            `json:"usernameClaimed"`
@@ -207,7 +207,7 @@ type maigretSite struct {
 	AlexaRank         int               `json:"alexaRank"`
 	Engine            string            `json:"engine"`
 	RequestMethod     string            `json:"requestMethod"`
-	RequestPayload    json.RawMessage   `json:"requestPayload"` // map или string
+	RequestPayload    json.RawMessage   `json:"requestPayload"` // Object or string.
 	Errors            map[string]string `json:"errors"`
 	Protection        []string          `json:"protection"`
 	Source            string            `json:"source"`
@@ -236,7 +236,7 @@ func (m *maigretSite) toSiteConfig(name string) models.SiteConfig {
 		Weight:            10,
 	}
 
-	// requestPayload может быть объектом или строкой
+	// Retain structured payloads as JSON; unwrap string payloads.
 	if len(m.RequestPayload) > 0 {
 		if m.RequestPayload[0] == '{' || m.RequestPayload[0] == '[' {
 			cfg.RequestPayload = string(m.RequestPayload)
@@ -247,7 +247,7 @@ func (m *maigretSite) toSiteConfig(name string) models.SiteConfig {
 		}
 	}
 
-	// Миграция checkType
+	// Infer a check type when none is specified.
 	if cfg.CheckType == "" {
 		switch {
 		case cfg.ErrorCode != 0:
@@ -266,9 +266,9 @@ func normalizeURL(u string) string {
 	if u == "" {
 		return ""
 	}
-	// Sherlock использует {} вместо {username}
+	// Sherlock uses {} for the username placeholder.
 	u = strings.ReplaceAll(u, "{}", "{username}")
-	// Maigret использует {urlMain} и {urlSubpath} — заменяем на пустое / заглушку
+	// Engine-specific Maigret placeholders are not resolved; remove them.
 	u = strings.ReplaceAll(u, "{urlMain}", "")
 	u = strings.ReplaceAll(u, "{urlSubpath}", "")
 	return u

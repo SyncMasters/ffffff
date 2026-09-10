@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	// Структурированное логирование через стандартный пакет log/slog (Go 1.21+)
+	// Use structured logging on stderr.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -31,7 +31,7 @@ func main() {
 		"formats", cfg.OutputFormats,
 	)
 
-	// Контекст с жестким таймаутом на весь процесс
+	// Apply a deadline to the entire run.
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.TotalTimeout)
 	defer cancel()
 

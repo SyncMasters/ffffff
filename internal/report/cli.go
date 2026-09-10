@@ -11,7 +11,7 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// CLIReport генерирует цветной текстовый отчёт в терминал и файл.
+// CLIReport renders a terminal summary and a plain-text report.
 type CLIReport struct{}
 
 func NewCLIReport() *CLIReport {
@@ -22,14 +22,14 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 	target, results = normalizeResults(target, results)
 	summary := BuildSummary(target, results, duration)
 
-	// Печатаем в stdout
+	// Print the terminal report.
 	printHeader(target, duration)
 	printStats(summary)
 	printFoundTable(results)
 	printBlockedTable(results)
 	printFooter(summary)
 
-	// Сохраняем в файл
+	// Save a plain-text copy.
 	path := filepath.Join("output", fmt.Sprintf("%s_report.txt", sanitizeFilename(target)))
 	if err := os.MkdirAll("output", 0o755); err != nil {
 		return "", err
@@ -40,7 +40,7 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 	}
 	defer f.Close()
 
-	// Пишем plaintext версию в файл
+	// Write the report header.
 	fmt.Fprintf(f, "AGENTSEARCH REPORT\n")
 	fmt.Fprintf(f, "==================\n\n")
 	fmt.Fprintf(f, "Target: %s\n", target)
@@ -108,7 +108,7 @@ func printFoundTable(results []models.Result) {
 	green := color.New(color.FgGreen, color.Bold)
 	green.Printf("✓ Found %d profile(s):\n\n", len(found))
 
-	// Заголовок
+	// Print table headings.
 	fmt.Printf("%-30s %-12s %-12s %s\n", "SITE", "CONFIDENCE", "LATENCY", "URL")
 	fmt.Println(strings.Repeat("─", 120))
 

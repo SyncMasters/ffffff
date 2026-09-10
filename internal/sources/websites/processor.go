@@ -12,22 +12,22 @@ import (
 	"github.com/johan-larp/agentsearch/internal/worker"
 )
 
-// siteProcessor реализует worker.Processor — логику обработки одного сайта.
+// siteProcessor implements worker.Processor for website checks.
 type siteProcessor struct {
 	source *Source
 	target string
 	kind   models.TargetType
 }
 
-// Process выполняет HTTP-запрос и применяет декларативный движок детекции.
+// Process makes a request and applies the existing detection engine.
 func (p *siteProcessor) Process(ctx context.Context, job worker.Job) (res models.Result) {
 	site := job.Site
 	start := time.Now()
 
-	// Подстановка переменных в URL
+	// Substitute the target into the URL.
 	checkURL := strings.ReplaceAll(site.URL, "{username}", p.target)
 	checkURL = strings.ReplaceAll(checkURL, "{target}", p.target)
-	// urlProbe имеет приоритет, если задан
+	// Use the probe endpoint when configured.
 	if site.URLProbe != "" {
 		checkURL = strings.ReplaceAll(site.URLProbe, "{username}", p.target)
 		checkURL = strings.ReplaceAll(checkURL, "{target}", p.target)
@@ -57,7 +57,7 @@ func (p *siteProcessor) Process(ctx context.Context, job worker.Job) (res models
 		return res
 	}
 
-	// Формирование запроса
+	// Construct the request.
 	method := http.MethodGet
 	if site.RequestMethod != "" {
 		method = site.RequestMethod
@@ -79,7 +79,7 @@ func (p *siteProcessor) Process(ctx context.Context, job worker.Job) (res models
 		return res
 	}
 
-	// Заголовки: ротация UA + кастомные заголовки сайта
+	// Apply default and site-specific headers.
 	req.Header.Set("User-Agent", p.source.ua.GetRandom())
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
@@ -91,7 +91,7 @@ func (p *siteProcessor) Process(ctx context.Context, job worker.Job) (res models
 		req.Header.Set(k, strings.ReplaceAll(v, "{username}", p.target))
 	}
 
-	// Выполнение запроса с контролем редиректов
+	// Apply the site's redirect policy.
 	client := p.source.client
 	if !site.FollowRedirects {
 		noRedirect := *client
@@ -108,13 +108,13 @@ func (p *siteProcessor) Process(ctx context.Context, job worker.Job) (res models
 	}
 	defer resp.Body.Close()
 
-	// Определяем финальный URL
+	// Determine the final response URL.
 	finalURL := checkURL
 	if resp.Request != nil && resp.Request.URL != nil {
 		finalURL = resp.Request.URL.String()
 	}
 
-	// Читаем тело с ограничением (128 KiB) — защита от огромных ответов
+	// Limit the response body to 128 KiB.
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 128*1024))
 	if err != nil {
 		res.Error = err.Error()
@@ -122,7 +122,7 @@ func (p *siteProcessor) Process(ctx context.Context, job worker.Job) (res models
 	}
 	body := string(bodyBytes)
 
-	// Декларативная детекция
+	// Interpret the response.
 	detection := p.source.detector.Analyze(site, resp, body, finalURL)
 	res.Found = detection.Found
 	res.Confidence = detection.Confidence

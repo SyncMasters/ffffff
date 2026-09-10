@@ -10,15 +10,14 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// HTMLReport генерирует интерактивный HTML-отчёт.
+// HTMLReport renders a self-contained interactive report.
 type HTMLReport struct{}
 
 func NewHTMLReport() *HTMLReport {
 	return &HTMLReport{}
 }
 
-// reportTmpl парсится один раз при инициализации пакета: ошибка в шаблоне
-// обнаружится сразу на старте, а не при генерации N-го отчёта.
+// Parse the template once so invalid templates fail at startup.
 var reportTmpl = template.Must(template.New("report").Parse(htmlTemplate))
 
 func (h *HTMLReport) Generate(target string, results []models.Result, duration time.Duration) (string, error) {

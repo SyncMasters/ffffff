@@ -9,14 +9,14 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-// uTLSDialer создаёт кастомный DialTLSContext с JA3 fingerprint spoofing.
-// Использует uTLS вместо стандартного crypto/tls для имитации реальных браузеров.
-// Это критично для обхода Cloudflare и других WAF, которые анализируют TLS handshake.
+// uTLSDialer supplies an experimental browser-like TLS handshake.
+// It uses uTLS in place of the standard TLS dialer.
+// Compatibility with all servers and proxy combinations is not guaranteed.
 type uTLSDialer struct {
 	netDialer *net.Dialer
 }
 
-// newUTLSDialer возвращает dialer с Chrome-подобным JA3 fingerprint.
+// newUTLSDialer creates a dialer using the Chrome handshake profile.
 func newUTLSDialer(timeout time.Duration) *uTLSDialer {
 	return &uTLSDialer{
 		netDialer: &net.Dialer{
@@ -26,15 +26,15 @@ func newUTLSDialer(timeout time.Duration) *uTLSDialer {
 	}
 }
 
-// DialContext реализует контекстный dial с uTLS.
-// Использует HelloChrome_Auto для максимальной совместимости.
+// DialContext opens a connection and performs a cancellable uTLS handshake.
+// The selected profile is HelloChrome_Auto.
 func (d *uTLSDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	plainConn, err := d.netDialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	// uTLS использует свой Config, совместимый с crypto/tls
+	// Configure the uTLS connection.
 	cfg := &utls.Config{
 		InsecureSkipVerify: false,
 		MinVersion:         utls.VersionTLS12,
@@ -48,8 +48,8 @@ func (d *uTLSDialer) DialContext(ctx context.Context, network, addr string) (net
 	return uconn, nil
 }
 
-// EnableUTLS добавляет uTLS dial в transport.
-// Если useUTLS == false, возвращает стандартный DialContext.
+// EnableUTLS installs a uTLS dialer when enabled.
+// Otherwise it leaves the transport unchanged.
 func EnableUTLS(tr *http.Transport, useUTLS bool) {
 	if !useUTLS {
 		return

@@ -8,15 +8,15 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// JSONWriter реализует потоковую запись JSON-массива.
-// Файл открывается как [elem1, elem2, ...] без необходимости держать всё в памяти.
+// JSONWriter streams a JSON array of normalized results.
+// Results are written incrementally rather than buffered as one array.
 type JSONWriter struct {
 	file  *os.File
 	mu    sync.Mutex
 	first bool
 }
 
-// NewJSONWriter создает JSON-файл и пишет открывающую скобку массива.
+// NewJSONWriter creates a file and starts the JSON array.
 func NewJSONWriter(path string) (*JSONWriter, error) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -28,7 +28,7 @@ func NewJSONWriter(path string) (*JSONWriter, error) {
 	return &JSONWriter{file: f, first: true}, nil
 }
 
-// Write сериализует результат и дописывает в файл с запятой-разделителем.
+// Write appends a serialized result with the appropriate separator.
 func (w *JSONWriter) Write(res models.Result) error {
 	res = res.Normalized()
 	w.mu.Lock()
@@ -50,7 +50,7 @@ func (w *JSONWriter) Write(res models.Result) error {
 	return nil
 }
 
-// Close закрывает массив и файл.
+// Close terminates the array and closes the file.
 func (w *JSONWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

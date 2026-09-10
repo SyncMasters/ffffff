@@ -8,13 +8,13 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// TXTWriter пишет человекочитаемый отчет.
+// TXTWriter writes a compact human-readable result log.
 type TXTWriter struct {
 	file *os.File
 	mu   sync.Mutex
 }
 
-// NewTXTWriter создает текстовый отчет.
+// NewTXTWriter creates a text output file.
 func NewTXTWriter(path string) (*TXTWriter, error) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -23,7 +23,7 @@ func NewTXTWriter(path string) (*TXTWriter, error) {
 	return &TXTWriter{file: f}, nil
 }
 
-// Write форматирует результат в строку.
+// Write formats a normalized result as text.
 func (w *TXTWriter) Write(res models.Result) error {
 	res = res.Normalized()
 	w.mu.Lock()
@@ -38,7 +38,7 @@ func (w *TXTWriter) Write(res models.Result) error {
 	return err
 }
 
-// Close закрывает файл.
+// Close closes the output file.
 func (w *TXTWriter) Close() error {
 	return w.file.Close()
 }

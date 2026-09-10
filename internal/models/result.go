@@ -7,7 +7,7 @@ import (
 	"github.com/johan-larp/agentsearch/internal/security"
 )
 
-// ResultStatus описывает итоговое состояние проверки сайта.
+// ResultStatus describes the outcome of a source lookup.
 type ResultStatus string
 
 const (

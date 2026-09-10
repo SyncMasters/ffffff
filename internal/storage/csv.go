@@ -10,14 +10,14 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// CSVWriter пишет результаты в CSV с заголовком.
+// CSVWriter writes results with the legacy CSV header.
 type CSVWriter struct {
 	file *os.File
 	w    *csv.Writer
 	mu   sync.Mutex
 }
 
-// NewCSVWriter создает CSV-файл и записывает заголовок.
+// NewCSVWriter creates a CSV file and writes its header.
 func NewCSVWriter(path string) (*CSVWriter, error) {
 	f, err := os.Create(path)
 	if err != nil {
@@ -32,7 +32,7 @@ func NewCSVWriter(path string) (*CSVWriter, error) {
 	return &CSVWriter{file: f, w: writer}, nil
 }
 
-// Write преобразует Result в CSV-запись.
+// Write projects a normalized result into a CSV record.
 func (w *CSVWriter) Write(res models.Result) error {
 	res = res.Normalized()
 	w.mu.Lock()
@@ -56,7 +56,7 @@ func (w *CSVWriter) Write(res models.Result) error {
 	return w.w.Error()
 }
 
-// Close завершает запись.
+// Close flushes and closes the file.
 func (w *CSVWriter) Close() error {
 	w.w.Flush()
 	return w.file.Close()

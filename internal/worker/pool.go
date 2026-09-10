@@ -8,20 +8,20 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// Job — единица работы для воркера.
+// Job is a website work item.
 type Job struct {
 	Site   models.SiteConfig
 	Target string
 }
 
-// Processor определяет контракт обработки одной задачи.
+// Processor handles one work item.
 type Processor interface {
 	Process(ctx context.Context, job Job) models.Result
 }
 
-// Pool реализует паттерн Worker Pool с фиксированным числом горутин.
-// Канал jobs буферизуется неявно через submitters; канал results
-// передается наружу для потребления результатов.
+// Pool runs a fixed number of workers.
+// Unbuffered channels provide backpressure.
+// Callers must drain the results channel.
 type Pool struct {
 	workers   int
 	jobs      chan Job
@@ -29,7 +29,7 @@ type Pool struct {
 	processor Processor
 }
 
-// NewPool создает пул с заданным числом воркеров.
+// NewPool creates a pool with the requested worker count.
 func NewPool(workers int, processor Processor) *Pool {
 	return &Pool{
 		workers:   workers,
@@ -68,25 +68,25 @@ func (p *Pool) Start(ctx context.Context) {
 		}(i)
 	}
 
-	// Когда все воркеры завершились — закрываем results
+	// Close results after all workers finish.
 	go func() {
 		wg.Wait()
 		close(p.results)
 	}()
 }
 
-// Submit отправляет задачу в пул. Блокируется, если внутренний канал переполнен
-// (в данной реализации канал небуферизован, поэтому backpressure естественный).
+// Submit blocks until a worker accepts the job.
+// Use SubmitContext when the search may be cancelled.
 func (p *Pool) Submit(job Job) {
 	p.jobs <- job
 }
 
-// Close закрывает канал jobs, сигнализируя воркерам о завершении.
+// Close closes the jobs channel; only the submitting owner should call it.
 func (p *Pool) Close() {
 	close(p.jobs)
 }
 
-// Results возвращает канал для чтения результатов.
+// Results returns the result stream.
 func (p *Pool) Results() <-chan models.Result {
 	return p.results
 }

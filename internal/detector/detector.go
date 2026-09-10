@@ -8,49 +8,49 @@ import (
 	"github.com/johan-larp/agentsearch/internal/models"
 )
 
-// DetectionResult содержит результат анализа ответа сервера.
+// DetectionResult describes the interpretation of a server response.
 type DetectionResult struct {
 	Found      bool
 	Confidence int
 	Status     models.ResultStatus
 }
 
-// Engine реализует декларативный движок детекции.
+// Engine applies declarative site detection rules.
 type Engine struct{}
 
-// New создает новый движок детекции.
+// New creates a detection engine.
 func New() *Engine {
 	return &Engine{}
 }
 
-// Analyze проверяет HTTP-ответ по правилам, заданным в SiteConfig.
-// Логика приоритета:
-//  1. WAF / защита
-//  2. Правила редиректов (final URL)
-//  3. Декларативная проверка по CheckType
+// Analyze interprets an HTTP response using SiteConfig rules.
+// Rules are applied in this order:
+//  1. WAF and protection indicators
+//  2. Redirect rules for the final URL
+//  3. The configured check type
 func (e *Engine) Analyze(site models.SiteConfig, resp *http.Response, body, finalURL string) DetectionResult {
-	// 1. Распознавание WAF
+	// Detect WAF responses first.
 	if isWAF(resp, body, site.WAFIndicators) {
 		return DetectionResult{Status: models.StatusBlocked, Confidence: 0}
 	}
 
-	// Глобальные маркеры защиты из поля protection
+	// Honor explicit protection markers.
 	for _, p := range site.Protection {
 		if p == "cf_js_challenge" || p == "custom_bot_protection" {
-			// Дополнительная эвристика уже учтена в isWAF,
-			// но явный маркер гарантирует пометку как blocked.
+			// An explicit protection marker forces a blocked result,
+			// even if response-based WAF heuristics do not match.
 			return DetectionResult{Status: models.StatusBlocked, Confidence: 0}
 		}
 	}
 
-	// 2. Проверка редиректов: если финальный URL содержит паттерн неудачи
+	// Check the final URL for redirect failure patterns.
 	for _, pattern := range site.RedirectFailurePatterns {
 		if strings.Contains(finalURL, pattern) {
 			return DetectionResult{Status: models.StatusNotFound, Confidence: 0}
 		}
 	}
 
-	// 3. Декларативная логика по типу проверки
+	// Apply the configured detection strategy.
 	switch site.CheckType {
 	case "status_code":
 		return e.checkStatusCode(site, resp)
@@ -61,7 +61,7 @@ func (e *Engine) Analyze(site models.SiteConfig, resp *http.Response, body, fina
 	case "header":
 		return e.checkHeaders(site, resp)
 	default:
-		// Fallback: если тип не указан, используем эвристики
+		// Use status heuristics when no check type is configured.
 		if site.ErrorCode != 0 && resp.StatusCode == site.ErrorCode {
 			return DetectionResult{Status: models.StatusNotFound, Confidence: 0}
 		}
@@ -76,7 +76,7 @@ func (e *Engine) checkStatusCode(site models.SiteConfig, resp *http.Response) De
 	if site.ErrorCode != 0 && resp.StatusCode == site.ErrorCode {
 		return DetectionResult{Status: models.StatusNotFound, Confidence: 0}
 	}
-	// 2xx / 3xx считаем признаком существования профиля
+	// Treat 2xx and 3xx responses as evidence of a profile.
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		conf := calculateBaseConfidence(site, resp, "")
 		return DetectionResult{Found: true, Status: models.StatusFound, Confidence: conf}
@@ -85,7 +85,7 @@ func (e *Engine) checkStatusCode(site models.SiteConfig, resp *http.Response) De
 }
 
 func (e *Engine) checkMessage(site models.SiteConfig, body string) DetectionResult {
-	// Сначала проверяем absence-индикаторы (профиль НЕ найден)
+	// Absence indicators take precedence over presence indicators.
 	for _, s := range site.AbsenceStrs {
 		if strings.Contains(body, s) {
 			return DetectionResult{Status: models.StatusNotFound, Confidence: 0}
@@ -97,7 +97,7 @@ func (e *Engine) checkMessage(site models.SiteConfig, body string) DetectionResu
 		}
 	}
 
-	// Затем presence-индикаторы (профиль найден)
+	// Check presence indicators next.
 	for _, s := range site.PresenceStrs {
 		if strings.Contains(body, s) {
 			conf := calculateBaseConfidence(site, nil, body)
@@ -111,8 +111,7 @@ func (e *Engine) checkMessage(site models.SiteConfig, body string) DetectionResu
 		}
 	}
 
-	// Нет четких индикаторов — низкая уверенность, чтобы не терять потенциальные находки,
-	// но и не завышать ложные срабатывания.
+	// Preserve uncertain matches with a low confidence score.
 	conf := calculateBaseConfidence(site, nil, body)
 	if conf < 30 {
 		conf = 30
@@ -137,11 +136,11 @@ func (e *Engine) checkHeaders(site models.SiteConfig, resp *http.Response) Detec
 	return DetectionResult{Status: models.StatusNotFound, Confidence: 0}
 }
 
-// isWAF определяет, не ответил ли сервер WAF-заглушкой (Cloudflare, DDoS-GUARD и т.д.).
+// isWAF identifies known protection responses and configured WAF indicators.
 func isWAF(resp *http.Response, body string, cfg models.WAFConfig) bool {
 	lowerBody := strings.ToLower(body)
 
-	// --- Глобальные эвристики ---
+	// Built-in heuristics.
 	if resp.Header.Get("CF-RAY") != "" {
 		return true
 	}
@@ -158,7 +157,7 @@ func isWAF(resp *http.Response, body string, cfg models.WAFConfig) bool {
 		return true
 	}
 
-	// --- Пользовательские правила из конфига сайта ---
+	// Site-specific WAF rules.
 	for _, code := range cfg.StatusCodes {
 		if resp.StatusCode == code {
 			return true
@@ -178,7 +177,7 @@ func isWAF(resp *http.Response, body string, cfg models.WAFConfig) bool {
 	return false
 }
 
-// calculateBaseConfidence вычисляет базовую уверенность на основе веса сайта и эвристик.
+// calculateBaseConfidence combines the site weight and response heuristics.
 func calculateBaseConfidence(site models.SiteConfig, resp *http.Response, body string) int {
 	score := site.Weight
 	if score == 0 {
@@ -189,7 +188,7 @@ func calculateBaseConfidence(site models.SiteConfig, resp *http.Response, body s
 		score += 30
 	}
 
-	// Если тело непустое и достаточно большое — скорее всего это реальная страница, а не заглушка
+	// A substantial body contributes a small confidence bonus.
 	if len(body) > 200 {
 		score += 10
 	}

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// AppConfig агрегирует все CLI-флаги и runtime-настройки.
+// AppConfig holds CLI options and runtime settings.
 type AppConfig struct {
 	Targets             []string
 	SitesFile           string
@@ -28,25 +28,25 @@ type AppConfig struct {
 	MaxRetries          int
 }
 
-// ParseFlags разбирает аргументы командной строки.
+// ParseFlags parses command-line options.
 func ParseFlags() (*AppConfig, error) {
 	var (
-		u   = flag.String("u", "", "Target username or email")
-		f   = flag.String("f", "", "File with targets (one per line)")
-		s   = flag.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
-		p   = flag.String("p", "", "Proxies file (http://ip:port or socks5://ip:port)")
-		o   = flag.String("o", "output", "Output directory")
-		of  = flag.String("of", "json,csv,txt", "Output formats: json,csv,txt (comma-separated)")
-		rf  = flag.String("rf", "cli,html", "Report formats: cli,html,docx (comma-separated)")
-		w   = flag.Int("w", 50, "Number of concurrent workers")
-		rt  = flag.Duration("rt", 15*time.Second, "HTTP request timeout")
-		tt  = flag.Duration("tt", 10*time.Minute, "Total search timeout per batch")
-		mc  = flag.Int("mc", 500, "Max idle connections in pool")
-		mch = flag.Int("mch", 100, "Max idle connections per host")
-		rl  = flag.Duration("rl", 500*time.Millisecond, "Rate limit delay between requests to same host")
-		ua  = flag.String("ua", "", "External User-Agent list file")
-		d   = flag.Bool("d", false, "Enable deep search (dorking mode stub)")
-		utls= flag.Bool("utls", false, "Enable uTLS JA3 fingerprint spoofing (anti-WAF)")
+		u       = flag.String("u", "", "Target username or email")
+		f       = flag.String("f", "", "File with targets (one per line)")
+		s       = flag.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
+		p       = flag.String("p", "", "Proxies file (http://ip:port or socks5://ip:port)")
+		o       = flag.String("o", "output", "Output directory")
+		of      = flag.String("of", "json,csv,txt", "Output formats: json,csv,txt (comma-separated)")
+		rf      = flag.String("rf", "cli,html", "Report formats: cli,html,docx (comma-separated)")
+		w       = flag.Int("w", 50, "Number of concurrent workers")
+		rt      = flag.Duration("rt", 15*time.Second, "HTTP request timeout")
+		tt      = flag.Duration("tt", 10*time.Minute, "Total search timeout per batch")
+		mc      = flag.Int("mc", 500, "Max idle connections in pool")
+		mch     = flag.Int("mch", 100, "Max idle connections per host")
+		rl      = flag.Duration("rl", 500*time.Millisecond, "Rate limit delay between requests to same host")
+		ua      = flag.String("ua", "", "External User-Agent list file")
+		d       = flag.Bool("d", false, "Enable deep search (dorking mode stub)")
+		utls    = flag.Bool("utls", false, "Enable uTLS JA3 fingerprint spoofing (anti-WAF)")
 		retries = flag.Int("retries", 2, "Max retries on 429/5xx errors")
 	)
 	flag.Parse()

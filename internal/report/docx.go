@@ -10,7 +10,7 @@ import (
 	"github.com/unidoc/unioffice/document"
 )
 
-// DOCXReport генерирует формальный Word-документ.
+// DOCXReport generates a Word document using UniOffice.
 type DOCXReport struct{}
 
 func NewDOCXReport() *DOCXReport {
@@ -24,20 +24,20 @@ func (d *DOCXReport) Generate(target string, results []models.Result, duration t
 
 	doc := document.New()
 
-	// Заголовок
+	// Document title.
 	title := doc.AddParagraph()
 	titleRun := title.AddRun()
 	titleRun.AddText("AgentSearch OSINT Report")
 	titleRun.Properties().SetBold(true)
 	titleRun.Properties().SetSize(28)
 
-	// Мета-информация
+	// Search metadata.
 	addMeta(doc, "Target:", target)
 	addMeta(doc, "Generated:", time.Now().Format("2006-01-02 15:04:05"))
 	addMeta(doc, "Duration:", duration.Round(time.Second).String())
 	doc.AddParagraph()
 
-	// Сводка
+	// Summary.
 	h2 := doc.AddParagraph()
 	h2Run := h2.AddRun()
 	h2Run.AddText("Summary")

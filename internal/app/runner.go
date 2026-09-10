@@ -24,9 +24,9 @@ func (r *Runner) Search(ctx context.Context, target models.Target, emit sources.
 	return r.manager.Search(ctx, target, emit)
 }
 
-// Run запускает поиск по всем таргетам с поддержкой Graceful Shutdown.
+// Run searches all CLI targets and handles graceful shutdown.
 func (a *App) Run(ctx context.Context) error {
-	// Перехват Ctrl+C / SIGTERM для корректной отмены контекста
+	// Cancel pending work on SIGINT or SIGTERM.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
