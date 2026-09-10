@@ -68,6 +68,10 @@ func readSelection(ctx context.Context, root string) (selection, error) {
 			continue
 		}
 		if e != nil {
+			if own, ok := e.(*Error); ok && own.kind == "invalid_file_size" {
+				sel.recovered = true
+				continue
+			}
 			return sel, e
 		}
 		a, ok, e := decodeSlot(raw)
@@ -301,14 +305,32 @@ func Prune(ctx context.Context, root string) (removed []string, err error) {
 			if own, ok := e.(*Error); ok && own.kind == "busy" {
 				continue
 			}
-			return removed, e
+			// An interrupted creator can die before creating lease.lock. The
+			// updater lock excludes creators; both slot targets were excluded.
+			if !os.IsNotExist(e) {
+				return removed, e
+			}
 		}
 		// Gate remains held while releasing the lease handle and deleting on Windows.
-		if e = lease.Close(); e != nil {
-			return removed, e
+		if lease != nil {
+			if e = lease.Close(); e != nil {
+				return removed, e
+			}
 		}
 		for _, name := range []string{"hashes.bin", "prefix.idx", "manifest.json"} {
-			e = os.Chmod(filepath.Join(dir, name), 0600)
+
+			path := filepath.Join(dir, name)
+			st, statErr := os.Lstat(path)
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			if statErr != nil {
+				return removed, statErr
+			}
+			if !st.Mode().IsRegular() {
+				return removed, problem("invalid_file")
+			}
+			e = os.Chmod(path, 0600)
 			if e != nil && !os.IsNotExist(e) {
 				return removed, e
 			}
