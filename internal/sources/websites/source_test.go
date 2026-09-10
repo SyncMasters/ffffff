@@ -39,6 +39,7 @@ func TestWebsiteAdapter(t *testing.T) {
 		confidence int
 	}{
 		{"found", models.SiteConfig{CheckType: "status_code", ErrorCode: 404, Weight: 20}, 200, "", nil, models.StatusFound, 50},
+		{"http-failure-is-only-a-rule-negative", models.SiteConfig{CheckType: "status_code"}, 500, "unretained body", nil, models.StatusNotFound, 0},
 		{"missing", models.SiteConfig{CheckType: "status_code", ErrorCode: 404}, 404, "", nil, models.StatusNotFound, 0},
 		{"message-absence", models.SiteConfig{CheckType: "message", AbsenceStrs: []string{"missing"}}, 200, "missing", nil, models.StatusNotFound, 0},
 		{"regex-absence", models.SiteConfig{CheckType: "message", AbsenceRegexes: []string{"not.*here"}}, 200, "not here", nil, models.StatusNotFound, 0},
@@ -70,6 +71,13 @@ func TestWebsiteAdapter(t *testing.T) {
 				t.Fatal(err, len(results))
 			}
 			r := results[0]
+			meaning := models.MeaningObservation
+			if tt.status == models.StatusBlocked {
+				meaning = models.MeaningUnknown
+			}
+			if r.EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationWebsite, Meaning: meaning}) {
+				t.Fatal("website inference became verified evidence")
+			}
 			if r.Status != tt.status || r.Confidence != tt.confidence || r.Source != "Example" || r.SourceType != models.SourceWebsite || r.TargetType != models.TargetUsername || r.Duration <= 0 {
 				t.Fatalf("result: %+v", r)
 			}

@@ -439,6 +439,47 @@ The website source supports username and legacy email-template searches. HIBP ha
 
 `app.NewRunner(registry).Search(ctx, target, emit)` is the source-neutral execution boundary. The dispatcher derives capabilities from small interfaces. It preserves partial results, stops on consumer errors, and does not import storage or reports. Models depend only on the standard library and the small security package. The network layer does not depend on concrete sources. HTTP clients and secrets are supplied at the application composition boundary.
 
+### Evidence and provenance semantics
+
+A result is a source-scoped observation or lookup outcome, **not a security verdict**.
+Existing `source`, `source_type`, `target_type`, `status`, `evidence` and `metadata` provide its
+context. Service source IDs are `hibp`, `securitytrails`, `pwned-passwords` and
+`pwned-passwords-local`. Legacy website `source` values are configured **site identifiers**,
+with `source_type: "website"`; `SiteName`/`site_name` retains the display label. The dispatcher
+and diagnostics call the website adapter `websites`. These existing result values are unchanged.
+Attribution is supplied by configured sources, not a cryptographic proof of origin.
+
+The internal `Result.EvidenceSemantics()` view derives a bounded `Kind` and `Meaning` from those
+existing fields. It does not copy targets, URLs, evidence values, credentials or scores, and is
+**not attached to Result or serialized into JSON/HTTP/CSV/TXT/reports**. No public schema change,
+new metadata field, CLI flag or diagnostic event is introduced.
+
+| Internal kind | Legitimate interpretation |
+|---|---|
+| `website_detection` | Configured rule/heuristic output; neither ownership nor activity is established. Both positive and negative detector outcomes are observations, not verified profile absence. |
+| `breach_association` | HIBP reports an email/breach association, not present account compromise. A supported no-match is limited to returned breach data. |
+| `domain_profile` | SecurityTrails reports a matching profile and selected DNS data, not live DNS or maliciousness. Empty DNS data is still a profile observation; 404 remains an error. |
+| `password_corpus` | Exact lookup in the selected corpus, not proof of account compromise. A negative does not establish password strength or safety. |
+| `unknown` | No provider-specific evidence contract is assumed. |
+
+Meanings are `observation`, `absence`, `error`, `unknown`. `absence` applies only to supported
+HIBP email/password corpus negatives; it is not universal negative evidence or a completeness
+claim. Errors remain errors; blocked/unrecognized outcomes are unknown. Unknown providers and
+domain profiles do not acquire a negative contract from a `not_found` string. The legacy status
+and normalization rules remain unchanged; an empty/implicitly normalized record is not by itself
+proof of an acquisition. Interpret explicit provider statuses under their documented contracts.
+
+Confidence retains its existing deterministic score and numeric values (including API password
+negative 0 versus local negative 100). It is not probability, compromise likelihood, provider
+trust or evidence quality; existing percent-style displays do not change that meaning.
+
+No `observed_at` is added: normalization and ordered delivery may occur after acquisition, so
+stamping there would invent acquisition time. Breach dates are upstream metadata, local
+`acquired_at` is dataset acquisition metadata, `duration` is elapsed work, and report generation
+time is rendering time—not observation time or upstream freshness. No raw response capture is
+added. Partial results keep per-source evidence; deduplication remains absent because no canonical
+observation identity exists. No forensic certainty, real-time status or source completeness is claimed.
+
 ### Source orchestration
 
 Selection uses the existing insertion-ordered registry snapshot and capability interfaces.

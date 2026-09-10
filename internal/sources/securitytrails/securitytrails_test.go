@@ -60,6 +60,9 @@ func TestSuccessfulDomainObservation(t *testing.T) {
 		t.Fatal("dispatch failed")
 	}
 	r := rows[0]
+	if r.EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationDomain, Meaning: models.MeaningObservation}) {
+		t.Fatal("domain profile provenance lost")
+	}
 	if r.Source != "securitytrails" || r.TargetType != models.TargetDomain || r.Status != models.StatusFound || r.Confidence != 100 || r.Metadata["dns_record_count"] != "5" || r.Evidence[1].Value != "192.0.2.1" {
 		t.Fatal("normalization mismatch")
 	}
@@ -78,7 +81,7 @@ func TestEmptyProfileIsNotVerifiedAbsence(t *testing.T) {
 	}, time.Millisecond)
 	source, _ := NewSource(client)
 	err := source.SearchDomain(context.Background(), "example.com", func(r models.Result) error {
-		if r.Status != models.StatusFound || r.Metadata["dns_record_count"] != "0" {
+		if r.Status != models.StatusFound || r.Metadata["dns_record_count"] != "0" || r.EvidenceSemantics().Meaning != models.MeaningObservation {
 			t.Fatal("empty DNS profile misrepresented as absence")
 		}
 		return nil
@@ -106,6 +109,9 @@ func TestHTTPFailuresRemainErrors(t *testing.T) {
 			source, _ := NewSource(client)
 			var rows []models.Result
 			err := source.SearchDomain(context.Background(), "example.com", func(r models.Result) error { rows = append(rows, r); return nil })
+			if len(rows) != 1 || rows[0].EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationDomain, Meaning: models.MeaningError}) {
+				t.Fatal("provider failure became negative evidence")
+			}
 			var classified *Error
 			if !errors.As(err, &classified) || classified.Kind != tc.kind || len(rows) != 1 || rows[0].Status != models.StatusError || rows[0].Metadata["error_kind"] != tc.kind {
 				t.Fatal("provider status became a non-error")

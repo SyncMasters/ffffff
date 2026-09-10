@@ -202,6 +202,16 @@ func TestPasswordStatuses(t *testing.T) {
 			source := passwordSourceForTest(t, server.URL+"/range", client)
 			var result models.Result
 			err := source.SearchPassword(context.Background(), security.NewSecret("password"), func(r models.Result) error { result = r; return nil })
+			meaning := models.MeaningObservation
+			if result.Status == models.StatusNotFound {
+				meaning = models.MeaningAbsence
+			}
+			if result.Status == models.StatusError {
+				meaning = models.MeaningError
+			}
+			if result.EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationPassword, Meaning: meaning}) {
+				t.Fatal("password corpus semantics changed")
+			}
 			if calls.Load() != 1 || result.Status != tc.status || result.Metadata["occurrences"] != tc.count || result.Metadata["error_kind"] != string(tc.kind) || (err != nil) != (tc.kind != "") {
 				t.Fatal("unexpected response outcome")
 			}

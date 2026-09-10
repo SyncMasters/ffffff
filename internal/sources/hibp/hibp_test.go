@@ -88,6 +88,11 @@ func TestBreachLookupAndDispatch(t *testing.T) {
 	if err != nil || calls.Load() != 1 || len(results) != 2 {
 		t.Fatal("lookup failed", err, len(results))
 	}
+	for _, row := range results {
+		if row.EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationBreach, Meaning: models.MeaningObservation}) {
+			t.Fatal("breach provenance lost")
+		}
+	}
 	first := results[0]
 	if first.Source != "hibp" || first.SourceType != models.SourceAPI || first.TargetType != models.TargetEmail || first.Target != email || first.Status != models.StatusFound || !first.Found || first.Confidence != 100 || first.Duration <= 0 {
 		t.Fatal("incorrect normalized fields")
@@ -140,6 +145,13 @@ func TestResponseSemantics(t *testing.T) {
 				t.Fatal("unexpected request/result count")
 			}
 			r := results[0]
+			meaning := models.MeaningError
+			if tt.kind == "" {
+				meaning = models.MeaningAbsence
+			}
+			if r.EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationBreach, Meaning: meaning}) {
+				t.Fatal("breach absence/error semantics lost")
+			}
 			if tt.kind == "" {
 				if err != nil || r.Status != models.StatusNotFound || r.Found || r.Metadata["breach_count"] != "0" {
 					t.Fatal("no breach became an error")

@@ -8,7 +8,8 @@ import (
 	"github.com/johan-larp/agentsearch/internal/security"
 )
 
-// ResultStatus describes the outcome of a source lookup.
+// ResultStatus describes the source lookup outcome, not a security verdict.
+// In particular, website not_found may be a detector inference. See EvidenceSemantics.
 type ResultStatus string
 
 const (
@@ -21,7 +22,8 @@ const (
 // Result is a normalized observation from any source. Legacy fields remain for
 // existing writers and callers; sensitive input is never a result payload.
 type Result struct {
-	// Source identifies the producing provider; SiteName is a legacy display alias.
+	// Source is the service provider identifier or, for legacy website results,
+	// the configured site identifier. SiteName retains the display label.
 	Source     string     `json:"source,omitempty"`
 	SourceType SourceType `json:"source_type,omitempty"`
 	// Target and TargetType form a safe reference, preserving the legacy target string.
@@ -32,11 +34,13 @@ type Result struct {
 	Target     string            `json:"target" csv:"target"`
 	URL        string            `json:"url" csv:"url"`
 	Found      bool              `json:"found" csv:"found"`
-	Confidence int               `json:"confidence" csv:"confidence"`
-	Status     ResultStatus      `json:"status" csv:"status"`
-	Duration   time.Duration     `json:"duration" csv:"duration"`
-	Error      string            `json:"error,omitempty" csv:"error"`
-	FinalURL   string            `json:"final_url,omitempty" csv:"final_url"`
+	// Confidence is the existing deterministic score, not probability, source
+	// trust or evidence quality. Interpretation depends on the source contract.
+	Confidence int           `json:"confidence" csv:"confidence"`
+	Status     ResultStatus  `json:"status" csv:"status"`
+	Duration   time.Duration `json:"duration" csv:"duration"`
+	Error      string        `json:"error,omitempty" csv:"error"`
+	FinalURL   string        `json:"final_url,omitempty" csv:"final_url"`
 }
 
 // NewResult creates a safe result reference without copying sensitive input.

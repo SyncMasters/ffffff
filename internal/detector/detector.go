@@ -76,7 +76,7 @@ func (e *Engine) checkStatusCode(site models.SiteConfig, resp *http.Response) De
 	if site.ErrorCode != 0 && resp.StatusCode == site.ErrorCode {
 		return DetectionResult{Status: models.StatusNotFound, Confidence: 0}
 	}
-	// Treat 2xx and 3xx responses as evidence of a profile.
+	// A positive rule signal from 2xx/3xx is not proof of profile ownership or activity.
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		conf := calculateBaseConfidence(site, resp, "")
 		return DetectionResult{Found: true, Status: models.StatusFound, Confidence: conf}

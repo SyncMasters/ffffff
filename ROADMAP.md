@@ -129,6 +129,18 @@ emission order is retained; this stage makes cross-source aggregation determinis
 worker completion order. Standard composition remains single-source. No throughput claim or live
 provider/native Windows runtime verification is inferred from local tests and cross-builds.
 
+## Stage 11 — Evidence and result provenance: implemented
+
+- [x] Reuse existing source/type/status/evidence metadata; clarify legacy website attribution.
+- [x] Internal, non-serialized evidence interpretation: observation, scoped absence, error, unknown.
+- [x] Distinguish detector inference from corpus negatives and domain-profile observations.
+- [x] Local provider, concurrent partial-evidence, output compatibility and secrecy regressions.
+
+No public schema, timestamp, score, password evidence, provider behavior or output change.
+No deduplication without canonical identity; no acquisition time inferred from normalization or
+render time. Stage 9 diagnostics and Stage 10 orchestration remain intact. Live-provider, native
+Windows, production and forensic-certainty claims are not made.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.

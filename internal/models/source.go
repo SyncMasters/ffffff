@@ -9,7 +9,8 @@ const (
 	SourceLocal   SourceType = "local"
 )
 
-// Evidence contains only non-secret observations, never raw response bodies.
+// Evidence contains source-specific, non-secret details, never raw response bodies.
+// Interpret it with the enclosing result provenance/status, not as a security verdict.
 type Evidence struct {
 	Kind  string `json:"kind"`
 	Value string `json:"value"`

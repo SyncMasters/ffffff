@@ -48,6 +48,16 @@ func TestLocalPasswordLifecycleAndResults(t *testing.T) {
 				}
 				return nil
 			})
+			meaning := models.MeaningObservation
+			if result.Status == models.StatusNotFound {
+				meaning = models.MeaningAbsence
+			}
+			if result.Status == models.StatusError {
+				meaning = models.MeaningError
+			}
+			if result.EvidenceSemantics() != (models.EvidenceSemantics{Kind: models.ObservationPassword, Meaning: meaning}) {
+				t.Fatal("password corpus semantics changed")
+			}
 			if !shared.Empty() {
 				t.Fatal("shared secret retained")
 			}
