@@ -163,22 +163,10 @@ func loadExternalJSON(data []byte) ([]models.SiteConfig, bool, error) {
 		var normalized, native map[string]json.RawMessage
 		_ = json.Unmarshal(b, &normalized)
 		_ = json.Unmarshal(entries[name], &native)
+		// Unknown external aliases are ignored by SiteConfig's JSON tags.
+		// Overlay all raw fields so explicit native zero values also win.
 		for key, value := range native {
-			if _, ok := normalized[key]; ok {
-				normalized[key] = value
-			}
-		}
-		// omitempty means absent fields need recognition independently of values.
-		var direct models.SiteConfig
-		if json.Unmarshal(entries[name], &direct) == nil {
-			directJSON, _ := json.Marshal(direct)
-			var explicit map[string]json.RawMessage
-			_ = json.Unmarshal(directJSON, &explicit)
-			for key := range explicit {
-				if value, ok := native[key]; ok {
-					normalized[key] = value
-				}
-			}
+			normalized[key] = value
 		}
 		b, _ = json.Marshal(normalized)
 		_ = json.Unmarshal(b, &site)

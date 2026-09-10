@@ -63,3 +63,16 @@ func TestServices(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalNativeOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sites.json")
+	data := `{"Example":{"url":"https://example.test/{}","errorType":"message","errorMsg":"missing","absence_strs":[],"check_type":"status_code","error_code":404,"weight":0}}`
+	_ = os.WriteFile(path, []byte(data), 0600)
+	sites, err := LoadSites(path)
+	if err != nil || len(sites) != 1 {
+		t.Fatal(err)
+	}
+	if sites[0].CheckType != "status_code" || len(sites[0].AbsenceStrs) != 0 || sites[0].ErrorCode != 404 {
+		t.Fatalf("native override lost: %+v", sites[0])
+	}
+}
