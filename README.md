@@ -369,7 +369,7 @@ AgentSearch принимает **три формата** баз данных б�
 - Автоматически определяется `check_type` на основе полей (`error_code` → `status_code`, `absence_strs` → `message`, `error_url` → `response_url` и т.д.)
 - `weight` по умолчанию устанавливается в `10`
 - Записи с `disabled: true` пропускаются
-- Записи без URL (engine-only) игнорируются (пустой URL → пропуск в `app.go`)
+- Записи без URL (engine-only) игнорируются (пустой URL → пропуск в website source)
 
 ---
 
@@ -718,75 +718,49 @@ time=2026-07-09T17:19:45.000Z level=WARN msg="shutdown signal received, exiting"
 
 ## Архитектура
 
-```
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│   CLI Flags     │────▶│  App Config  │────▶│  Sites Loader   │
-│  (config.go)    │     │              │     │ (loader.go)     │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                              │
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Proxy Rotator  │────▶│ HTTP Client  │◀────│  UA Rotator     │
-│  (proxy.go)     │     │ (client.go)  │     │  (ua.go)        │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                               │
-                               ▼
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│   Worker Pool   │────▶│   Jobs       │────▶│   Processor     │
-│  (pool.go)      │     │  (каналы)    │     │  (app.go)       │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                               │
-                               ▼
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Rate Limiter   │────▶│  Detector    │────▶│  WAF Check      │
-│ (limiter.go)    │     │(detector.go) │     │ (detector.go)   │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │   Storage Manager   │
-                    │   (manager.go)      │
-                    └─────────────────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  JSON Writer    │     │  CSV Writer  │     │  TXT Writer     │
-│  (json.go)      │     │  (csv.go)    │     │  (txt.go)       │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │   Report Generator  │
-                    │   (report/*.go)     │
-                    └─────────────────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  CLI Report     │     │  HTML Report │     │  DOCX Report    │
-│  (cli.go)       │     │  (html.go)   │     │  (docx.go)      │
-└─────────────────┘     └──────────────┘     └─────────────────┘
+```text
+CLI (-u / -f, прежние флаги)
+  ↓
+Application: зависимости и жизненный цикл → Runner: типизированный поиск
+  ↓
+Sources: реестр и диспетчеризация по возможностям
+  └─ websites → worker pool → rate limiter → network → detector / WAF
+  ↓
+Нормализованные results
+  ↓
+Общие storage / reports
 ```
 
-**Поток данных:**
+Поиск по сайтам теперь реализован как **один источник** —
+`internal/sources/websites`. Его процессор перенесён из `app.go`; HTTP-клиент,
+детектор, настройки сайтов и пул воркеров переиспользуются, а не дублируются.
+Имя источника в реестре — `websites`, поле `source` в результате — имя конкретного
+сайта из базы. Другой провайдер может выполнять локальные операции без HTTP и воркеров.
 
-1. `config.ParseFlags()` → конфигурация
-2. `app.New()` → инициализация (UA-ротатор, прокси-ротатор, HTTP-клиент, загрузка сайтов)
-3. `app.Run()` → для каждого таргета:
-   - `storage.NewManager()` → writer'ы (JSON/CSV/TXT)
-   - `worker.NewPool()` → пул воркеров
-   - Подача задач: `pool.Submit(Job{Site, Target})`
-   - Воркер → `siteProcessor.Process()`:
-     - Подстановка `{username}` в URL/headers/payload
-     - Rate limit (`limiter.Wait`)
-     - HTTP-запрос (с ротацией прокси и UA, uTLS, retry)
-     - Чтение тела (лимит 128 KiB)
-     - `detector.Analyze()` → WAF → редиректы → check_type → результат
-   - Результат → `store.Write()` → все writer'ы
-   - Результат → `logResult()` → slog
-   - После завершения → `report.WriteAll()` → CLI/HTML/DOCX отчёты
+`Source` предоставляет имя и тип. Возможности определяются отдельными интерфейсами:
+`UsernameSearcher`, `EmailSearcher`, `PasswordSearcher`, `PasswordHashSearcher`.
+Реестр сохраняет порядок регистрации; диспетчер вызывает только поддерживаемые
+операции. Результаты передаются последовательным callback с backpressure.
+`app.NewRunner(registry).Search(ctx, target, emit)` не требует CLI или файлового вывода.
+
+Модель `Target` поддерживает `username`, `email`, `password`, `password_hash`.
+Пароли и хеши скрыты при форматировании/сериализации; в результат переносится только
+безопасная ссылка (`target` + `target_type`). Пакет `security` редактирует известные
+секреты, чувствительные поля и учётные данные в URL. Это дополнительная защита:
+провайдеры не должны помещать секреты в evidence, metadata, URL или ошибки.
+CLI по-прежнему принимает только прежние `-u` / `-f`; **не передавайте туда пароли**.
+
+JSON сохраняет прежние поля и добавляет `source`, `source_type`, `target_type`,
+а при наличии — `evidence` и `metadata`. CSV сохраняет прежние девять колонок,
+TXT — прежний краткий формат: это совместимые проекции общего результата.
+HTML умеет отображать дополнительные evidence/metadata без зависимости от провайдера.
+Storage и reports не импортируют конкретные sources; network не зависит от sources.
+Models зависят только от стандартной библиотеки и небольшого пакета security.
+
+`configs/sites.yaml` и все CLI-флаги сохранены. `configs/services.yaml` —
+**неактивный пример** будущих настроек: `config.LoadServices` только читает и проверяет
+YAML, не читает ключи из окружения и не запускает сервисы. CLI этот файл не загружает.
+HIBP, Pwned Passwords, локальная база паролей, HTTP API и AI **не реализованы**.
 
 ---
 
@@ -800,18 +774,33 @@ AgentSearch/
 │   └── convert/
 │       └── main.go              # Утилита слияния Sherlock + Maigret → YAML
 ├── configs/
-│   └── sites.yaml               # База сайтов по умолчанию (примеры)
+│   ├── sites.yaml               # База сайтов по умолчанию (примеры)
+│   └── services.yaml            # Неактивные настройки будущих сервисов
 ├── internal/
 │   ├── app/
-│   │   └── app.go               # App struct, Run(), siteProcessor.Process()
+│   │   ├── app.go               # Создание зависимостей и регистрация sources
+│   │   └── runner.go            # Типизированный поиск и CLI lifecycle
 │   ├── config/
 │   │   ├── config.go            # ParseFlags(), AppConfig
 │   │   ├── loader.go            # LoadSites() — загрузка YAML/JSON/Sherlock/Maigret
-│   │   └── convert.go           # MergeAndConvert() — логика слияния баз
+│   │   ├── convert.go           # MergeAndConvert() — логика слияния баз
+│   │   └── services.go          # Независимая загрузка настроек сервисов
 │   ├── detector/
 │   │   └── detector.go          # Engine, Analyze(), WAF-детекция, confidence
 │   ├── models/
-│   │   └── models.go            # SiteConfig, Result, ResultStatus, WAFConfig
+│   │   ├── site.go              # SiteConfig, WAFConfig
+│   │   ├── target.go            # Target, TargetType
+│   │   ├── result.go            # Общий Result и совместимые поля
+│   │   └── source.go            # SourceType, Evidence
+│   ├── security/
+│   │   └── redact.go            # Secret и редактирование чувствительных данных
+│   ├── sources/
+│   │   ├── source.go            # Интерфейсы возможностей
+│   │   ├── registry.go          # Регистрация и поиск источников
+│   │   ├── manager.go           # Диспетчеризация и нормализация
+│   │   └── websites/
+│   │       ├── source.go        # Адаптер существующего движка
+│   │       └── processor.go     # Обработка сайта через network и detector
 │   ├── network/
 │   │   ├── client.go            # HTTP-клиент, proxyRotatorTransport, retryable client
 │   │   ├── utls.go              # uTLS JA3 fingerprint spoofing
