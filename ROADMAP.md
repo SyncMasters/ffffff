@@ -85,6 +85,15 @@ Live provider verification: **NOT RUN**. Native Windows execution, production sc
 suitability: **UNVERIFIED**. See [external intelligence](docs/external-intelligence.md) and README
 for official references, configuration, usage and limitations.
 
+## Stage 7 — Core search contract stabilization: implemented
+
+- [x] HTTP email uses the existing canonical validator, including its post-trim length limit.
+- [x] Dispatcher preserves safe context-error identity without retaining raw provider error chains.
+- [x] Focused CLI/HTTP target parity and runner/error-status regressions.
+
+No new provider, schema, confidence rule, CLI flag, password workflow or dependency was added.
+Legacy website-input compatibility and stricter HTTP input bounds remain intentional.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.

@@ -439,6 +439,13 @@ The website source supports username and legacy email-template searches. HIBP ha
 
 `app.NewRunner(registry).Search(ctx, target, emit)` is the source-neutral execution boundary. The dispatcher derives capabilities from small interfaces. It preserves partial results, stops on consumer errors, and does not import storage or reports. Models depend only on the standard library and the small security package. The network layer does not depend on concrete sources. HTTP clients and secrets are supplied at the application composition boundary.
 
+Stage 7 preserves standard cancellation/deadline identity through the dispatcher without retaining
+raw provider error chains. A provider-local timeout remains a timeout even when the outer request
+is still active: HTTP returns 504 (or 408 for cancellation), including when no error-metadata row
+was emitted. Safe error text, partial observations, result statuses/confidence and the CSV schema
+are unchanged. Legacy `-u`/`-f` website input remains intentionally more permissive than HTTP username
+input; explicit email and domain intelligence use their canonical target validators.
+
 ## Unified HTTP API (Stage 5)
 
 The separate `agentsearch-server` command reuses app/runner, capability dispatch, and the existing
@@ -534,8 +541,8 @@ Never place a password in a URL, username/email/domain target, filename or reque
 
 Bodies are limited to **32 KiB**, headers to the server's **16 KiB** setting, and compressed request
 bodies are unsupported. Usernames are 1–256 UTF-8 bytes and permit letters, digits, `_`, `-`, `.`
-(excluding `.` and `..` alone), not arbitrary URLs or template syntax. Email input is at most
-254 UTF-8 bytes and uses the existing single bare-address validator. Passwords are 1–4096 UTF-8
+(excluding `.` and `..` alone), not arbitrary URLs or template syntax. Email uses the same single bare-address validator as CLI `-email`: its 254-byte limit is
+applied after trimming outer whitespace, preserving address case and plus tags. Passwords are 1–4096 UTF-8
 bytes after JSON decoding: no trimming, case changes or normalization. Unpaired Unicode
 surrogate escapes are rejected instead of silently changing a password.
 

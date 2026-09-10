@@ -63,7 +63,8 @@ func NewSearchTarget(kind, value string, password []byte) (models.Target, error)
 		}
 		return target, nil
 	case models.TargetEmail:
-		if len(password) != 0 || len(value) > 254 || !utf8.ValidString(value) {
+		// The canonical validator applies its length limit after trimming, as CLI does.
+		if len(password) != 0 {
 			return models.Target{}, ErrInvalidSearch
 		}
 		target, err := models.NewEmailTarget(value)

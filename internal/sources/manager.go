@@ -80,7 +80,16 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 			if target.Type().Sensitive() {
 				message = security.Redact(message, target.Value())
 			}
-			failures = append(failures, fmt.Errorf("source %s: %s", s.Name(), message))
+			failure := &sourceFailure{message: fmt.Sprintf("source %s: %s", s.Name(), message)}
+			// Preserve standard cancellation semantics without retaining the original
+			// provider error chain, which may contain request data or credentials.
+			if errors.Is(err, context.Canceled) {
+				failure.contextErr = context.Canceled
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				failure.contextErr = errors.Join(failure.contextErr, context.DeadlineExceeded)
+			}
+			failures = append(failures, failure)
 		}
 	}
 	if !supported {
@@ -91,3 +100,13 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 	}
 	return errors.Join(failures...)
 }
+
+// sourceFailure retains the existing safe message and only context sentinels.
+// Provider-specific details continue to travel in normalized error metadata.
+type sourceFailure struct {
+	message    string
+	contextErr error
+}
+
+func (e *sourceFailure) Error() string { return e.message }
+func (e *sourceFailure) Unwrap() error { return e.contextErr }

@@ -84,3 +84,9 @@ func TestEmailTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestEmailRejectsInvalidUTF8(t *testing.T) {
+	if _, err := NewEmailTarget("\xff@example.test"); err == nil {
+		t.Fatal("malformed UTF-8 accepted by canonical email validator")
+	}
+}
