@@ -408,6 +408,11 @@ For example, a HIBP match includes:
 
 Website/email filenames are based on the target with unsafe filename characters replaced. Password outputs instead use the fixed `[REDACTED]` label. **Known limitation:** result files and summary JSON honor `-o`, but CLI/HTML/DOCX generators still write into `output/`. Runs using the same target can overwrite previous output; use separate working/output directories when preserving investigations. Existing output/report managers log some write failures rather than propagating them to the process exit status.
 
+Stage 12 closes already-acquired writers if later output setup fails, checks CSV header-flush
+failure during setup, and closes JSON files even when finalization fails. Primary errors and
+normal output schemas are preserved. Cleanup is not transactional rollback: files already created
+or truncated are not restored, and a failed write can still leave incomplete output.
+
 ## Security considerations
 
 - Query only targets you are authorized to investigate. Respect applicable law, source terms, and HIBP's acceptable-use policy.
@@ -505,6 +510,12 @@ their own work; arbitrary blocking code cannot be forcibly stopped. Panics in so
 goroutines cancel active work and are re-panicked on the caller after joining (first in registry
 order if several panic), preserving the existing Runner/HTTP panic boundary, not creating fake
 provider errors. This does not recover panics in a provider's own internal goroutines.
+
+Stage 12 fixes website consumer-panic cleanup: the adapter cancels, drains its worker results
+and joins submission before unwinding to Runner/HTTP recovery. HTTP admission is therefore not
+released while those owned workers are still cleaning up. The panic is not swallowed or turned
+into provider absence. Cleanup still requires cooperative work; forced server shutdown remains
+bounded independently of an unfinished handler, under the Stage 8 ownership contract.
 
 All existing normalized fields/evidence and writer schemas remain intact. **No deduplication**
 is performed: there is no stable observation ID, and equal URLs/targets are insufficient to
@@ -661,7 +672,10 @@ A disconnected client may receive no response. Context cancellation reaches the 
 there is no detached background search. Admission remains fail-fast: no requests wait in a slot
 queue, and excess searches receive 429 with `Retry-After: 1` before their bodies are read by the
 search handler. Admitted requests release their slots on completion, errors and cancellation.
-The existing 32 KiB body limit, request/transport timeouts and error mappings are unchanged.
+The existing 32 KiB body limit and request/transport timeouts are unchanged. Stage 12 corrects
+one early-status inconsistency: a deadline already expired before admission returns `504 timeout`,
+not `408 cancelled`, without reading the body or invoking a source. Explicit cancellation remains
+408, as do body-read timeouts; other error mappings are unchanged.
 
 Stage 8 separates the stop signal from active request cancellation. SIGINT/SIGTERM first stops
 accepting connections and closes idle connections; in-flight requests may finish within

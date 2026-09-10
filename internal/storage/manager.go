@@ -28,6 +28,13 @@ func NewManager(dir string, formats []string, target string) (*Manager, error) {
 	}
 
 	var writers []Writer
+	ready := false
+	defer func() {
+		if !ready {
+			// Roll back acquired resources without replacing the setup error.
+			(&Manager{writers: writers}).Close()
+		}
+	}()
 	for _, f := range formats {
 		path := filepath.Join(dir, fmt.Sprintf("%s.%s", sanitizeFilename(target), f))
 		switch f {
@@ -53,6 +60,7 @@ func NewManager(dir string, formats []string, target string) (*Manager, error) {
 			slog.Warn("unknown output format, skipping", "error_category", "invalid_request")
 		}
 	}
+	ready = true
 	return &Manager{writers: writers}, nil
 }
 

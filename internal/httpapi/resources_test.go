@@ -24,7 +24,7 @@ func (b *countedBody) Read(p []byte) (int, error) { n, e := b.Reader.Read(p); b.
 func (b *countedBody) Close() error               { b.closed = true; return nil }
 func TestBodyBoundAndAdmissionReleaseOnFailures(t *testing.T) {
 	var logs bytes.Buffer
-	for _, mode := range []string{"oversized", "error", "panic"} {
+	for _, mode := range []string{"oversized", "malformed", "error", "panic"} {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
 			h := handlerFor(t, func(_ context.Context, _ models.Target, _ sources.Emit) error {
@@ -39,6 +39,9 @@ func TestBodyBoundAndAdmissionReleaseOnFailures(t *testing.T) {
 			if mode == "oversized" {
 				body += strings.Repeat(" ", 4*MaxBodyBytes)
 				want = 413
+			} else if mode == "malformed" {
+				body = `{"type":`
+				want = 400
 			} else if mode == "panic" {
 				want = 500
 			}
@@ -50,6 +53,9 @@ func TestBodyBoundAndAdmissionReleaseOnFailures(t *testing.T) {
 			h.ServeHTTP(w, req)
 			if w.Code != want || !reader.closed || len(h.admission) != 0 {
 				t.Fatal("failure did not close body/release admission")
+			}
+			if mode == "malformed" && calls != 0 {
+				t.Fatal("malformed request reached engine")
 			}
 			if mode == "oversized" && (calls != 0 || reader.read > MaxBodyBytes+1) {
 				t.Fatal("oversized input reached engine or exceeded read bound")

@@ -26,9 +26,14 @@ func NewCSVWriter(path string) (*CSVWriter, error) {
 	writer := csv.NewWriter(f)
 	header := []string{"site_name", "target", "url", "found", "confidence", "status", "duration_ms", "error", "final_url"}
 	if err := writer.Write(header); err != nil {
+		_ = f.Close()
 		return nil, err
 	}
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
 	return &CSVWriter{file: f, w: writer}, nil
 }
 

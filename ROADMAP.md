@@ -141,6 +141,19 @@ No deduplication without canonical identity; no acquisition time inferred from n
 render time. Stage 9 diagnostics and Stage 10 orchestration remain intact. Live-provider, native
 Windows, production and forensic-certainty claims are not made.
 
+## Stage 12 — Operational reliability and failure semantics: implemented
+
+- [x] Audit lifecycle/error ownership against actual dispatcher, providers, outputs and HTTP code.
+- [x] Join website-owned workers/submission before consumer-panic propagation and HTTP recovery.
+- [x] Preserve already-expired request deadline identity before admission (504, not 408).
+- [x] Close acquired output writers on setup/finalization failure; check CSV header-flush errors.
+- [x] Barrier regressions for active deadline, provider-local cancellation, consumer diagnostics,
+  concurrent panic precedence, admission cleanup and shutdown during ordered source delivery.
+
+Bounded-pair orchestration and Stage 8 forced-shutdown ownership remain unchanged. No new public
+error taxonomy, schema, CLI flag, dependency, password/corpus behavior or provider lookup policy.
+Cooperative cleanup remains required; no live-provider/native Windows/production guarantee.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.

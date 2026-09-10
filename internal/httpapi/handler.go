@@ -201,8 +201,12 @@ func (h *Handler) search(w *writer, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.timeout)
 	defer cancel()
 	defer r.Body.Close()
-	if ctx.Err() != nil {
-		fail(w, 408, "cancelled", "request cancelled")
+	if err := ctx.Err(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			fail(w, 504, "timeout", "search timed out")
+		} else {
+			fail(w, 408, "cancelled", "request cancelled")
+		}
 		return
 	}
 	select {

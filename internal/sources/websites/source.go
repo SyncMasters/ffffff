@@ -77,6 +77,14 @@ func (s *Source) search(ctx context.Context, kind models.TargetType, value strin
 		}
 		slog.Debug("jobs submitted", "source", "websites", "target_type", string(kind), "count", count)
 	}()
+	// Consumer panics must unwind only after owned work is joined, just like
+	// returned errors. Cancel before draining so workers/submission can unblock.
+	defer func() {
+		cancel()
+		for range pool.Results() {
+		}
+		<-submitted
+	}()
 	var consumerErr error
 	for res := range pool.Results() {
 		if consumerErr == nil {

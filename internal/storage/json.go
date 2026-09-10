@@ -23,6 +23,7 @@ func NewJSONWriter(path string) (*JSONWriter, error) {
 		return nil, err
 	}
 	if _, err := f.WriteString("[\n"); err != nil {
+		_ = f.Close()
 		return nil, err
 	}
 	return &JSONWriter{file: f, first: true}, nil
@@ -54,8 +55,10 @@ func (w *JSONWriter) Write(res models.Result) error {
 func (w *JSONWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, err := w.file.WriteString("\n]\n"); err != nil {
-		return err
+	_, writeErr := w.file.WriteString("\n]\n")
+	closeErr := w.file.Close()
+	if writeErr != nil {
+		return writeErr
 	}
-	return w.file.Close()
+	return closeErr
 }
