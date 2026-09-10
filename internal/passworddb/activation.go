@@ -298,7 +298,7 @@ func Prune(ctx context.Context, root string) (removed []string, err error) {
 		dir := filepath.Join(root, "versions", id)
 		lease, e := lock(ctx, filepath.Join(dir, "lease.lock"), true, false)
 		if e != nil {
-			if own, ok := e.(*Error); ok && own.Kind == "busy" {
+			if own, ok := e.(*Error); ok && own.kind == "busy" {
 				continue
 			}
 			return removed, e

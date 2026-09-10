@@ -10,13 +10,13 @@ import (
 
 // Error contains only a fixed safe classification, never paths or lookup keys.
 type Error struct {
-	Kind  string
+	kind  string
 	cause error
 }
 
-func (e *Error) Error() string  { return "offline password database: " + e.Kind }
+func (e *Error) Error() string  { return "offline password database: " + e.kind }
 func (e *Error) Unwrap() error  { return e.cause }
-func problem(kind string) error { return &Error{Kind: kind} }
+func problem(kind string) error { return &Error{kind: kind} }
 
 // SafeError removes arbitrary error text at the database/provider boundary.
 func SafeError(err error) error {
@@ -29,9 +29,9 @@ func SafeError(err error) error {
 	}
 	switch {
 	case errors.Is(err, context.Canceled):
-		return &Error{Kind: "cancelled", cause: context.Canceled}
+		return &Error{kind: "cancelled", cause: context.Canceled}
 	case errors.Is(err, context.DeadlineExceeded):
-		return &Error{Kind: "timeout", cause: context.DeadlineExceeded}
+		return &Error{kind: "timeout", cause: context.DeadlineExceeded}
 	case errors.Is(err, os.ErrNotExist):
 		return problem("missing")
 	case errors.Is(err, os.ErrPermission):
@@ -41,3 +41,11 @@ func SafeError(err error) error {
 	}
 }
 func sanitize(err *error) { *err = SafeError(*err) }
+
+// ErrorKind returns a fixed safe category for diagnostics.
+func ErrorKind(err error) string {
+	if err == nil {
+		return ""
+	}
+	return SafeError(err).(*Error).kind
+}
