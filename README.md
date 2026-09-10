@@ -18,7 +18,8 @@ It is intended for defensive investigations, personal exposure checks, and secur
 | Experimental | Website uTLS support; transport combinations have known limitations |
 | Implemented | Explicit offline Pwned Passwords backend with immutable snapshots and separate corpus maintenance |
 | Implemented | Authenticated, bounded HTTP searches over the same username/email/password engine |
-| Planned | AI analysis and additional external sources |
+| Implemented | Opt-in SecurityTrails domain/DNS intelligence through CLI and HTTP |
+| Planned | AI analysis and further external providers |
 
 **For password checks, use `-password-prompt`. Never put passwords in website targets, target files, email input, or service YAML.** The `-d` flag is retained for compatibility but remains a no-op stub.
 
@@ -425,6 +426,7 @@ CLI flags
   -> application composition and target parsing
   -> Runner -> source registry / capability dispatcher
        |-- websites -> workers -> host limiter -> existing HTTP client -> detector
+       |-- securitytrails -> domain DNS observations -> standard service HTTP transport
        |-- hibp -> authenticated email breach client -> standard service HTTP transport
        `-- password backend (exactly one) -> local SHA-1 / secret consumption
               |-- api -> key-free range client -> local suffix match
@@ -440,7 +442,8 @@ The website source supports username and legacy email-template searches. HIBP ha
 ## Unified HTTP API (Stage 5)
 
 The separate `agentsearch-server` command reuses app/runner, capability dispatch, and the existing
-website, HIBP email, Pwned Passwords API and local sources. The CLI and its flags are unchanged.
+website, HIBP email, Pwned Passwords API and local sources. Stage 6 adds SecurityTrails domain
+intelligence through the same boundary. Existing CLI flags remain compatible.
 The server does not run CLI output/report orchestration or persist submitted searches.
 
 ### Start and configure
@@ -472,7 +475,7 @@ operator-supplied token. Restart to rotate it.
 | `-request-timeout` | `60s` | Request-derived search deadline, including body parsing |
 | `-max-concurrent` | `8` | Admitted searches, including body reads; range 1–128 |
 | `-s` | `configs/sites.yaml` | Trusted site database; `-s ''` disables username search |
-| `-services` | empty | Explicit existing services YAML; enables email only when HIBP is enabled |
+| `-services` | empty | Explicit services YAML; enabled email/domain providers require their environment keys |
 | `-password-backend` | `api` | Exactly one password provider: `api` or `local` |
 | `-password-db` | empty | Local managed database root, or resolve from explicit services YAML |
 | `-w`, `-rt`, `-rl`, `-retries` | `10`, `15s`, `500ms`, `2` | Existing website workers, provider HTTP timeout, website per-host delay and website retries |
@@ -527,7 +530,7 @@ curl http://127.0.0.1:8080/api/v1/search \
 These shell examples are demonstrative: literal bodies and expanded headers can be visible in
 shell history/process arguments. For real secrets, use a client that reads input without echo
 and submits the body and authorization header in memory, without debug dumps or persistence.
-Never place a password in a URL, username/email target, filename or request-ID header.
+Never place a password in a URL, username/email/domain target, filename or request-ID header.
 
 Bodies are limited to **32 KiB**, headers to the server's **16 KiB** setting, and compressed request
 bodies are unsupported. Usernames are 1–256 UTF-8 bytes and permit letters, digits, `_`, `-`, `.`
@@ -602,6 +605,93 @@ production load/durability and legal suitability remain **UNVERIFIED**. Review t
 [HIBP Terms](https://haveibeenpwned.com/TermsOfUse) for actual public/commercial use, redistribution
 or re-serving; this endpoint and operator-owned offline data do not certify legal permission.
 
+## Domain intelligence — SecurityTrails (Stage 6)
+
+Stage 6 adds **one** opt-in external provider, not another HIBP client. SecurityTrails supplies
+read-only domain/DNS observations through the existing registry, runner and normalized results.
+No requests are sent to the target domain, and no scans, submissions or discovery jobs are started.
+
+### Enable and query
+
+Obtain an API subscription/license permitting your internal security use, then supply the key
+through `SECURITYTRAILS_API_KEY` in the process environment. Never place the key value in YAML,
+command-line arguments, source code or logs. In `configs/services.yaml`:
+
+```yaml
+services:
+  securitytrails:
+    enabled: true
+    api_url: "https://api.securitytrails.com/v1"
+    api_key_env: "SECURITYTRAILS_API_KEY"
+    min_interval: "1s"
+```
+
+`enabled` defaults to false. `api_url`, `api_key_env` and `min_interval` may be omitted to use the
+values above. `min_interval` must be positive; set it according to your account's permitted rate,
+not to bypass limits. A custom API base is trusted operator configuration, must end with `/v1`,
+and requires HTTPS except literal-loopback HTTP test endpoints. No redirects are followed.
+
+```sh
+# SECURITYTRAILS_API_KEY must already be supplied through the environment.
+./agentsearch -domain example.com -services configs/services.yaml -of json,csv,txt -rf ''
+
+# The server also needs its separate AGENTSEARCH_API_TOKEN environment variable.
+./agentsearch-server -s '' -services configs/services.yaml
+
+curl http://127.0.0.1:8080/api/v1/search \
+  -H "Authorization: Bearer $AGENTSEARCH_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"type":"domain","target":"example.com"}'
+```
+
+As with other curl examples, an expanded authorization argument can be visible in process
+listings; use a suitable client for real credentials. The HTTP endpoint is for authorized internal
+use, not public redistribution of provider data. CLI output persists in the existing output
+pipeline: protect those files and respect your license's disclosure/retention conditions.
+
+`-domain` takes one hostname and can be combined with services, timeout, output and report options,
+not website/email/password input flags. Existing website, email and password commands retain their
+behavior. CLI modes do not initialize unrelated providers or require their keys. The server selects
+all enabled compatible sources at startup; an enabled provider with missing credentials fails
+startup, while disabled/unconfigured domain intelligence returns 503 without reading its key.
+
+Domain input is a bare ASCII/punycode hostname of at most 253 canonical bytes, with 1–63 byte labels
+and at least two labels. Outer whitespace, case and a single terminal DNS dot are canonicalized.
+URLs, ports, IP literals, wildcards and search expressions are rejected. Raw Unicode domain labels
+must be supplied as punycode. No registration, suffix-validity or ownership check is implied.
+
+### Results, quotas and limitations
+
+The same `models.Result` identifies `source: "securitytrails"`, `source_type: "api"` and
+`target_type: "domain"`. It contains sorted `domain`, `dns_a`, `dns_aaaa`, `dns_mx` and `dns_ns`
+evidence and safe metadata (`method`, `scope`, `dns_record_count`). TXT tokens, WHOIS contacts,
+raw bodies and unneeded provider fields are excluded. Responses are limited to 2 MiB and 2,048
+selected DNS records; malformed or oversized data is an error, never silently truncated.
+
+`found` / confidence 100 means an exact matching **provider profile**, not live DNS verification
+or a probability of compromise. An empty selected DNS set remains a profile observation with
+`dns_record_count: "0"`, not verified absence. The documented endpoint provides no definitive
+negative contract: 404 is an error, not `not_found`. No maliciousness score is invented.
+
+The default 1s request-start spacing is per client. There are no automatic retries. Both account
+quota exhaustion and throttling can produce 429. Subsequent starts respect a minimum 1s cooldown
+or longer parsed Retry-After; this does not replenish monthly credits. Coordinate account quotas
+across other clients/processes yourself. No cache, background queue or quota-management system
+is included. Requests and pacing waits honor cancellation and existing timeouts.
+
+Provider 401/403 and 5xx responses remain errors; the unified API maps credential/access/service
+unavailability to 503, rate limits to 429, malformed/other upstream failures to 502 and timeouts to
+504. Safe Retry-After is preserved. Domain provider logs and app diagnostics omit full target names
+and credentials; explicit CLI reports and authorized response payloads still contain domain data.
+Password dispatch, key-free prefix requests, local snapshots and secret handling are unchanged.
+
+**Licensing matters:** SecurityTrails/Recorded Future terms restrict internal security use, API
+entitlement and redistribution. A key alone does not authorize public/re-sold access through this
+server. Consult your agreement and current terms. See [provider selection, official references and
+operational limits](docs/external-intelligence.md) for details. Live provider verification is
+**NOT RUN**; native Windows execution, production-scale behavior and legal suitability are
+**UNVERIFIED**. All normal tests use local fixtures; no live credentials are required.
+
 ## Development and verification
 
 ```sh
@@ -630,7 +720,7 @@ In addition to output-directory and error-propagation limitations noted above:
 - HIBP responses are bounded to 2 MiB. No pagination, local cache, email hash-range lookup, pastes, domain enumeration, or separate stealer-log API is implemented.
 - HIBP API behavior is tested against local contract fixtures, not certified against a live subscription during CI.
 
-See [ROADMAP.md](ROADMAP.md) for the next stages. Stages 3–5 (password API, offline database/maintenance, unified HTTP API) are implemented. Acquisition stays external; a downloader, AI analysis and additional external sources are not implemented. Review current HIBP Terms before public/commercial deployment or corpus redistribution; software availability is not legal certification.
+See [ROADMAP.md](ROADMAP.md) for the next stages. Stages 3–6 (password API, offline database/maintenance, unified HTTP API and SecurityTrails domain intelligence) are implemented. Acquisition stays external; a downloader, AI analysis and further provider integrations are not implemented. Review current HIBP Terms before public/commercial deployment or corpus redistribution; software availability is not legal certification.
 
 ## License
 

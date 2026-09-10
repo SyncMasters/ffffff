@@ -67,8 +67,26 @@ persistence, browser CORS, accounts, debug endpoints, bulk searches or corpus ac
 Native Windows execution, full-corpus/production-scale verification, power-loss durability and legal
 suitability remain **UNVERIFIED**. See the HTTP startup, contract and limits in the [README](README.md).
 
+## Stage 6 — Additional external intelligence: implemented
+
+- [x] One additional provider: official read-only SecurityTrails Get Domain API.
+- [x] Validated domain target and DomainSearcher capability through the existing registry/dispatcher.
+- [x] Separate provider client/source with sorted normalized DNS observations and attributable metadata.
+- [x] Opt-in environment credentials and centralized composition; unused providers require no key.
+- [x] Existing service transport, bounded responses, no redirects/retries, cancellable pacing and safe errors.
+- [x] CLI `-domain` and generic HTTP `POST /api/v1/search` with `type: "domain"`.
+- [x] Focused local provider contracts and CLI/API integration tests; no live CI dependency.
+
+Selection stopped at one useful provider. No IP/URL targets, scanning, scraping, HIBP duplication,
+correlation engine, selector language, queues or AI were added. SecurityTrails domain profiles are
+observations, not compromise probabilities; undocumented negative responses are never treated as
+verified absence. API subscription, internal-use and redistribution restrictions apply.
+Live provider verification: **NOT RUN**. Native Windows execution, production scale and legal
+suitability: **UNVERIFIED**. See [external intelligence](docs/external-intelligence.md) and README
+for official references, configuration, usage and limitations.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
-- [ ] Additional external sources through capability-specific interfaces.
+- [ ] Further external providers through capability-specific interfaces.
 
 Existing CLI/HTML reports, license-dependent DOCX generation, website retries, proxy rotation, and WAF detection remain present. Their inherited limitations, including output paths and error propagation, are documented in the [README](README.md), not presented as new integrations.
