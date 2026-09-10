@@ -106,7 +106,7 @@ func TestEmailCLI(t *testing.T) {
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), "AGENTSEARCH_TEST_MISSING_KEY=")
 		output, err := cmd.CombinedOutput()
-		if err == nil || !strings.Contains(string(output), "requires the AGENTSEARCH_TEST_MISSING_KEY environment variable") {
+		if err == nil || !strings.Contains(string(output), "check service settings and environment credentials") {
 			t.Fatal("missing-key error was not actionable")
 		}
 	})

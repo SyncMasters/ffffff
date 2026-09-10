@@ -50,7 +50,7 @@ func NewManager(dir string, formats []string, target string) (*Manager, error) {
 			}
 			writers = append(writers, w)
 		default:
-			slog.Warn("unknown output format, skipping", "format", f)
+			slog.Warn("unknown output format, skipping", "error_category", "invalid_request")
 		}
 	}
 	return &Manager{writers: writers}, nil
@@ -60,7 +60,7 @@ func NewManager(dir string, formats []string, target string) (*Manager, error) {
 func (m *Manager) Write(res models.Result) {
 	for _, w := range m.writers {
 		if err := w.Write(res); err != nil {
-			slog.Error("write result failed", "error", err)
+			slog.Error("write result failed", "error_category", "internal_error")
 		}
 	}
 }
@@ -69,7 +69,7 @@ func (m *Manager) Write(res models.Result) {
 func (m *Manager) Close() {
 	for _, w := range m.writers {
 		if err := w.Close(); err != nil {
-			slog.Error("close writer failed", "error", err)
+			slog.Error("close writer failed", "error_category", "internal_error")
 		}
 	}
 }

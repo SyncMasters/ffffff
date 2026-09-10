@@ -602,6 +602,44 @@ arbitrary Go handlers cannot be forcibly interrupted by context cancellation. Wh
 server rather than using the command, the owner must handle a failed drain without closing resources
 still in use. This is not a guarantee of secure-memory erasure or production load resilience.
 
+### Safe operational diagnostics
+
+Search diagnostics reuse `log/slog` on stderr. At the default info level, `search completed`
+records summarize each Runner operation (`operation=search`) and actual provider invocation
+(`operation=source_search`). They include target type, safe source label, `duration_ms`, outcome
+and `error_category`, not individual result payloads. Source labels use the existing built-ins:
+`websites`, `hibp`, `pwned-passwords`, `pwned-passwords-local`, `securitytrails`; custom/site names
+and the source-neutral aggregate use `other`. Website sites are summarized as one provider.
+
+Outcomes are `started`, `success`, `not_found`, `blocked`, `error`, `canceled`,
+`deadline_exceeded`, `rejected`. `not_found` requires absent observations, never an empty stream.
+Errors dominate a mixed search summary; otherwise a found observation is success, then blocked,
+then absence. This is an operational summary, not a new confidence/risk score or result status.
+Categories distinguish `authentication`, `rate_limited`, `provider_error`, `invalid_request`,
+`internal_error`, `resource_limit`, `canceled`, `deadline_exceeded`, and `none`. Classification
+uses context sentinels, known provider `error_kind` values and HTTP decisions, never error text.
+Unknown provider failures stay generic; consumer failures are internal errors. HTTP response
+policy is unchanged, including 408 cancellation, 504 search timeout and provider status mapping.
+
+Elapsed milliseconds use `time.Now`/`time.Since` around the invocation, including emission/consumer
+work, not provider-supplied result durations. Runner timing excludes output setup and subsequent
+report generation; existing report/result duration fields are unchanged. Sub-millisecond calls
+may show zero. HTTP timing covers the handler; source/Runner records share its generated request
+ID. `http search admitted` records `started`; request completion records include `active_searches`
+and `max_concurrent`. These are instantaneous snapshots of existing slots (including body reads),
+not gauges, totals or a load/performance guarantee. Busy admission and body/result bounds have
+`rejected` / `resource_limit` diagnostics without changing response codes or adding a queue.
+
+Search/source start events, website job/worker detail and successful health checks use debug.
+Commands retain info-level handlers; an embedding caller can supply/configure an existing slog
+handler at debug level. There is no new verbosity flag or metrics endpoint. Debug does **not**
+restore private fields: no targets, URLs, credentials, headers/cookies, arbitrary errors/bodies,
+passwords, hashes, k-anonymity prefixes/suffixes, password method or occurrence counts are logged.
+Startup/output diagnostics omit arbitrary paths and malformed argument values; errors give a
+safe category/hint instead of raw chains. Normal CLI reports and result files still contain their
+intended non-password observations and target-based filenames: protect them separately. This is
+not a telemetry API, secure-memory guarantee or protection against external proxy/shell logging.
+
 ### Deployment and privacy limits
 
 This is a **controlled-deployment API**, not a public multi-tenant service. It has one shared
@@ -612,9 +650,10 @@ configure proxies, load balancers, clients or observability tools to log request
 authorization headers or query strings; invalid incoming URLs can contain secrets even though
 this server never echoes them. Query rejection cannot erase copies made by an earlier proxy.
 
-The transport logs only server-generated request ID, fixed route label, status and elapsed time;
-it ignores incoming request IDs and never logs arbitrary paths, bodies or headers. Existing
-website-engine logs may identify username targets, so protect those logs as personal data.
+The transport logs server-generated request IDs, fixed route/method labels, status, elapsed
+milliseconds, outcome, safe error category and admission snapshots; it ignores incoming IDs and
+never logs arbitrary paths, query values, bodies or headers. Healthy `/health` requests log only
+at debug level. Search diagnostics also omit full email, username and domain targets (see above).
 Passwords stay on the password-only dispatch path and are never website targets. Request buffers
 and consumable `security.Secret` handles are cleared/destroyed on success, error, cancellation
 and consumer failure. JSON, Go runtime, HTTP/TLS and client buffers can create copies: this is

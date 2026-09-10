@@ -19,6 +19,7 @@ import (
 
 	"github.com/johan-larp/agentsearch/internal/app"
 	"github.com/johan-larp/agentsearch/internal/config"
+	"github.com/johan-larp/agentsearch/internal/diagnostics"
 	"github.com/johan-larp/agentsearch/internal/models"
 	"github.com/johan-larp/agentsearch/internal/security"
 	"github.com/johan-larp/agentsearch/internal/sources"
@@ -76,7 +77,10 @@ type response struct {
 }
 type writer struct {
 	http.ResponseWriter
-	status int
+	status     int
+	errorCode  string
+	targetType models.TargetType
+	summary    diagnostics.Summary
 }
 
 func (w *writer) Unwrap() http.ResponseWriter { return w.ResponseWriter }
@@ -97,6 +101,13 @@ func send(w http.ResponseWriter, status int, payload any) {
 	if e != nil {
 		status = 500
 		b = []byte(`{"error":{"code":"internal_error","message":"response unavailable"}}`)
+	}
+	if state, ok := w.(*writer); ok {
+		if e != nil {
+			state.errorCode = "internal_error"
+		} else if p, ok := payload.(response); ok && p.Error != nil {
+			state.errorCode = p.Error.Code
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -128,7 +139,15 @@ func (h *Handler) ServeHTTP(dst http.ResponseWriter, r *http.Request) {
 		if recover() != nil {
 			fail(w, 500, "internal_error", "request failed")
 		}
-		h.log.Info("http request", "request_id", requestID, "route", route, "status", w.status, "duration", time.Since(start))
+		outcome := w.diagnosticOutcome(r.Context())
+		level := slog.LevelInfo
+		if route == "health" && w.status == 200 {
+			level = slog.LevelDebug
+		}
+		h.log.Log(r.Context(), level, "http request", "operation", "http_request", "request_id", requestID,
+			"route", route, "method", diagnosticMethod(r.Method), "target_type", diagnostics.Target(w.targetType),
+			"status", w.status, "duration_ms", time.Since(start).Milliseconds(), "outcome", outcome.Outcome,
+			"error_category", outcome.Category, "active_searches", len(h.admission), "max_concurrent", cap(h.admission))
 	}()
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -138,6 +157,7 @@ func (h *Handler) ServeHTTP(dst http.ResponseWriter, r *http.Request) {
 	}
 	requestID = hex.EncodeToString(id[:])
 	w.Header().Set("X-Request-ID", requestID)
+	r = r.WithContext(diagnostics.WithLogger(r.Context(), h.log.With("request_id", requestID)))
 	switch r.URL.Path {
 	case "/health":
 		route = "health"
@@ -188,6 +208,7 @@ func (h *Handler) search(w *writer, r *http.Request) {
 	select {
 	case h.admission <- struct{}{}:
 		defer func() { <-h.admission }()
+		diagnostics.Logger(ctx).InfoContext(ctx, "http search admitted", "operation", "http_request", "outcome", "started", "active_searches", len(h.admission), "max_concurrent", cap(h.admission))
 	default:
 		w.Header().Set("Retry-After", "1")
 		fail(w, 429, "too_many_requests", "server is busy")
@@ -227,6 +248,7 @@ func (h *Handler) search(w *writer, r *http.Request) {
 		fail(w, 400, "invalid_request", "invalid search request")
 		return
 	}
+	w.targetType = target.Type()
 	if target.Type().Sensitive() {
 		defer target.Secret().Destroy()
 	}
@@ -237,9 +259,14 @@ func (h *Handler) search(w *writer, r *http.Request) {
 			limited = true
 			return errResultLimit
 		}
+		w.summary.Observe(r)
 		rows = append(rows, r.Normalized())
 		return nil
 	})
+	var provider *hibp.Error
+	if errors.As(e, &provider) {
+		w.summary.Observe(models.Result{Status: models.StatusError, Metadata: map[string]string{"error_kind": string(provider.Kind)}})
+	}
 	if limited {
 		fail(w, 503, "result_limit", "configured search exceeds result limit")
 		return

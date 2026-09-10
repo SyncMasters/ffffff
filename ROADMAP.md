@@ -105,6 +105,17 @@ Existing 32 KiB bodies, fail-fast bounded search admission, transport/request ti
 HTTP errors remain. No queue, provider, target/result change, password change or dependency was added.
 Native Windows runtime, live-provider and production load verification remain outside this stage.
 
+## Stage 9 — Safe operational diagnostics: implemented
+
+- [x] Existing slog search/source summaries, monotonic elapsed time and bounded safe labels/categories.
+- [x] HTTP request correlation, admission/rejection snapshots and debug-only healthy health checks.
+- [x] Remove raw targets, URLs, paths and errors from search diagnostics, including password detail.
+- [x] Local outcome/redaction, timing-barrier, request-correlation and admission regression tests.
+
+No public schema, result/report contents, provider behavior, CLI flags or Stage 8 resource/lifecycle
+policy changed. No telemetry dependency, metrics endpoint or production monitoring claim is added.
+Live providers, native Windows runtime and production load remain unverified.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.

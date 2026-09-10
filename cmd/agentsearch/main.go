@@ -11,6 +11,7 @@ import (
 
 	"github.com/johan-larp/agentsearch/internal/app"
 	"github.com/johan-larp/agentsearch/internal/config"
+	"github.com/johan-larp/agentsearch/internal/diagnostics"
 	"github.com/johan-larp/agentsearch/internal/security"
 )
 
@@ -32,7 +33,7 @@ func run(parent context.Context, args []string, prompt security.PasswordPrompt) 
 		return 0
 	}
 	if err != nil {
-		slog.Error("configuration error", "error", err)
+		slog.Error("configuration error; use -h for options", "error_category", "invalid_request")
 		return 1
 	}
 	defer func() { cfg.Password.Destroy() }()
@@ -45,22 +46,20 @@ func run(parent context.Context, args []string, prompt security.PasswordPrompt) 
 	defer func() {
 		if application != nil {
 			if err := application.Close(); err != nil {
-				slog.Error("application cleanup failed", "error", err)
+				slog.Error("application cleanup failed", "error_category", "internal_error")
 				exitCode = 1
 			}
 		}
 	}()
 	if cfg.Mode == config.ModePassword {
-		method := "sha1-k-anonymity"
 		if cfg.PasswordBackend == config.PasswordBackendLocal {
-			method = "sha1-offline"
 			application, err = app.NewWithContext(ctx, cfg)
 			if err != nil {
-				slog.Error("initialization error", "error", err)
+				slog.Error("initialization error; check service settings and environment credentials", "error_category", diagnostics.ErrorCategory(err, "provider_error"))
 				return 1
 			}
 		}
-		slog.Info("password lookup starting", "source", "Pwned Passwords", "method", method)
+		slog.Debug("password input starting", "operation", "password_input", "target_type", "password", "outcome", "started")
 		if cfg.PasswordPrompt {
 			if prompt == nil {
 				slog.Error("password prompt is unavailable")
@@ -79,17 +78,17 @@ func run(parent context.Context, args []string, prompt security.PasswordPrompt) 
 			slog.Warn("-password exposes input through shell history, process listings, terminal logs and auditing; prefer -password-prompt")
 		}
 	} else {
-		slog.Info("agentsearch starting", "targets", len(cfg.Targets), "workers", cfg.Workers, "sites", cfg.SitesFile, "proxies", cfg.ProxiesFile, "output", cfg.OutputDir, "formats", cfg.OutputFormats)
+		slog.Debug("agentsearch starting", "targets", len(cfg.Targets), "workers", cfg.Workers)
 	}
 	if application == nil {
 		application, err = app.New(cfg)
 	}
 	if err != nil {
-		slog.Error("initialization error", "error", err)
+		slog.Error("initialization error; check service settings and environment credentials", "error_category", diagnostics.ErrorCategory(err, "provider_error"))
 		return 1
 	}
 	if err := application.Run(ctx); err != nil {
-		slog.Error("runtime error", "error", err)
+		slog.Error("runtime error", "error_category", diagnostics.ErrorCategory(err, "provider_error"))
 		return 1
 	}
 	slog.Info("agentsearch finished successfully")

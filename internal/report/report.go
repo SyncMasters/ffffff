@@ -129,22 +129,22 @@ func WriteAll(dir string, formats []string, target string, results []models.Resu
 		case "docx":
 			gen = NewDOCXReport()
 		default:
-			slog.Warn("unknown report format", "format", f)
+			slog.Warn("unknown report format", "error_category", "invalid_request")
 			continue
 		}
 
-		path, err := gen.Generate(target, results, duration)
+		_, err := gen.Generate(target, results, duration)
 		if err != nil {
-			slog.Error("generate report failed", "format", f, "error", err)
+			slog.Error("generate report failed", "format", f, "error_category", "internal_error")
 			continue
 		}
-		slog.Info("report generated", "format", f, "path", path)
+		slog.Info("report generated", "format", f)
 	}
 
 	// Also export a JSON summary.
 	summaryPath := filepath.Join(dir, fmt.Sprintf("%s_summary.json", sanitizeFilename(target)))
 	if err := writeSummaryJSON(summaryPath, summary); err != nil {
-		slog.Error("write summary failed", "error", err)
+		slog.Error("write summary failed", "error_category", "internal_error")
 	}
 
 	return nil

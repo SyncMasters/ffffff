@@ -71,14 +71,14 @@ func FetchProxies() []string {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(apiURL)
 	if err != nil {
-		slog.Error("fetch proxies failed", "error", err)
+		slog.Error("fetch proxies failed", "error_category", "provider_error")
 		return nil
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		slog.Error("read proxy response failed", "error", err)
+		slog.Error("read proxy response failed", "error_category", "provider_error")
 		return nil
 	}
 

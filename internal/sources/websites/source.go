@@ -75,7 +75,7 @@ func (s *Source) search(ctx context.Context, kind models.TargetType, value strin
 			}
 			count++
 		}
-		slog.Info("jobs submitted", "target", target, "count", count)
+		slog.Debug("jobs submitted", "source", "websites", "target_type", string(kind), "count", count)
 	}()
 	var consumerErr error
 	for res := range pool.Results() {

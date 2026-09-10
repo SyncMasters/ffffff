@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/johan-larp/agentsearch/internal/diagnostics"
 	"github.com/johan-larp/agentsearch/internal/models"
 	"github.com/johan-larp/agentsearch/internal/security"
 )
@@ -41,6 +43,9 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 			continue
 		}
 		supported = true
+		sourceStart := time.Now()
+		var summary diagnostics.Summary
+		diagnostics.Started(ctx, "source_search", target.Type(), s.Name())
 		var consumerErr error
 		deliver := func(r models.Result) error {
 			if consumerErr != nil {
@@ -55,22 +60,38 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 			if target.Type().Sensitive() {
 				r = r.Redacted(target.Value())
 			}
+			summary.Observe(r)
 			consumerErr = emit(r.Normalized())
 			return consumerErr
 		}
 		var err error
-		switch target.Type() {
-		case models.TargetDomain:
-			err = s.(DomainSearcher).SearchDomain(ctx, target.Value(), deliver)
-		case models.TargetUsername:
-			err = s.(UsernameSearcher).SearchUsername(ctx, target.Value(), deliver)
-		case models.TargetEmail:
-			err = s.(EmailSearcher).SearchEmail(ctx, target.Value(), deliver)
-		case models.TargetPassword:
-			err = s.(PasswordSearcher).SearchPassword(ctx, target.Secret(), deliver)
-		case models.TargetPasswordHash:
-			err = s.(PasswordHashSearcher).SearchPasswordHash(ctx, target.Secret(), deliver)
-		}
+		func() {
+			completed := false
+			defer func() {
+				outcome := summary.Finish(ctx, err)
+				if consumerErr != nil {
+					outcome = diagnostics.Failure(diagnostics.ErrorCategory(consumerErr, "internal_error"))
+				}
+				if !completed {
+					outcome = diagnostics.Failure("internal_error")
+				}
+				diagnostics.Completed(ctx, "source_search", target.Type(), s.Name(), sourceStart, outcome)
+			}()
+			switch target.Type() {
+			case models.TargetDomain:
+				err = s.(DomainSearcher).SearchDomain(ctx, target.Value(), deliver)
+			case models.TargetUsername:
+				err = s.(UsernameSearcher).SearchUsername(ctx, target.Value(), deliver)
+			case models.TargetEmail:
+				err = s.(EmailSearcher).SearchEmail(ctx, target.Value(), deliver)
+			case models.TargetPassword:
+				err = s.(PasswordSearcher).SearchPassword(ctx, target.Secret(), deliver)
+			case models.TargetPasswordHash:
+				err = s.(PasswordHashSearcher).SearchPasswordHash(ctx, target.Secret(), deliver)
+			}
+			completed = true
+		}()
+
 		if consumerErr != nil {
 			return consumerErr
 		}

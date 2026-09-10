@@ -32,7 +32,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger) int {
 		return 0
 	}
 	if err != nil {
-		logger.Error("server configuration error", "error", err)
+		logger.Error("server configuration error; use -h for options", "error_category", "invalid_request")
 		return 1
 	}
 	token := security.NewSecret(os.Getenv(cfg.TokenEnv))
@@ -62,7 +62,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger) int {
 		logger.Error("HTTP listener could not be opened")
 		return 1
 	}
-	logger.Info("HTTP server listening", "address", listener.Addr().String())
+	logger.Info("HTTP server listening", "max_concurrent", cfg.MaxConcurrent)
 	if err = httpapi.Serve(ctx, listener, handler, cfg, logger); err != nil {
 		// A forced/failed stop may leave an uncooperative request in app.Search.
 		// Do not wait on its lifecycle lock or close its snapshot underneath it.

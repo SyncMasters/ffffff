@@ -2,13 +2,11 @@ package network
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/johan-larp/agentsearch/internal/security"
 )
 
 // NewRetryableClient wraps an HTTP client with retryablehttp.
@@ -31,19 +29,11 @@ func NewRetryableClient(base *http.Client, maxRetries int) *http.Client {
 	retryClient.RetryWaitMax = 5 * time.Second
 	retryClient.Logger = nil // Disable the library logger; diagnostics use slog.
 
-	// Log retry decisions without exposing URL credentials.
+	// Log only status: even a redacted URL can contain private paths/query values.
 	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		shouldRetry, checkErr := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if shouldRetry && resp != nil {
-			rawURL := ""
-			if resp.Request != nil && resp.Request.URL != nil {
-				rawURL = resp.Request.URL.String()
-			}
-			slog.Warn("retrying request",
-				"status", resp.StatusCode,
-				"url", security.Redact(rawURL),
-				"error", security.Redact(fmt.Sprint(err)),
-			)
+			slog.Warn("retrying request", "source", "websites", "status", resp.StatusCode)
 		}
 		return shouldRetry, checkErr
 	}

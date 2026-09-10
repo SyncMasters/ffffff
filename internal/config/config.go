@@ -76,11 +76,9 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 			sensitiveArgs = true
 		}
 	}
-	// flag's own diagnostics can echo any malformed value, including a secret
-	// supplied to a wrong flag. Silence them before parsing password arguments.
-	if sensitiveArgs {
-		flags.SetOutput(io.Discard)
-	}
+	// flag's diagnostics may echo arbitrary arguments. Keep errors out of logs;
+	// explicit help is restored below and never prints supplied values.
+	flags.SetOutput(io.Discard)
 	flags.Var(password, "password", "Single Pwned Passwords lookup; exposes the argument to shell history/process listings; prefer -password-prompt")
 	passwordPrompt := flags.Bool("password-prompt", false, "Read one password from an interactive terminal without echo (recommended)")
 	backend, database := PasswordBackendAPI, ""
@@ -130,12 +128,12 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		retries  = flags.Int("retries", 2, "Max retries on 429/5xx errors")
 	)
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			flags.SetOutput(os.Stderr)
+			flags.Usage()
+			return nil, err
+		}
 		if sensitiveArgs {
-			if errors.Is(err, flag.ErrHelp) {
-				flags.SetOutput(os.Stderr)
-				flags.Usage()
-				return nil, err
-			}
 			return nil, fmt.Errorf("invalid password lookup arguments; use -h for options")
 		}
 		return nil, err

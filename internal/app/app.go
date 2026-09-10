@@ -80,7 +80,7 @@ func NewWithContext(ctx context.Context, cfg *config.AppConfig) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load sites: %w", err)
 	}
-	slog.Info("sites database loaded", "count", len(sites), "file", cfg.SitesFile)
+	slog.Info("sites database loaded", "count", len(sites))
 
 	website, err := websites.New(sites, cfg.Workers, client, ua, ratelimit.NewHostLimiter(cfg.RateLimitPerHost))
 	if err != nil {
@@ -191,7 +191,7 @@ func newLocalPasswordApp(ctx context.Context, cfg *config.AppConfig) (*App, erro
 	application := NewWithSources(cfg, registry)
 	application.close = snapshot.Close
 	if snapshot.Info().Recovered {
-		slog.Warn("offline database activation recovered from redundant record", "dataset_id", snapshot.Info().DatasetID)
+		slog.Warn("offline database activation recovered from redundant record")
 	}
 	return application, nil
 }
