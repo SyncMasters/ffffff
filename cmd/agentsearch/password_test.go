@@ -120,6 +120,7 @@ func TestPasswordCLI(t *testing.T) {
 		failure             bool
 	}{
 		{"found", 200, publicSuffix + ":42\n", "found", "PWNED", false},
+		{"found-email-key-present", 200, publicSuffix + ":42\n", "found", "PWNED", false},
 		{"not-pwned", 200, strings.Repeat("0", 35) + ":1\n", "not_found", "NOT PWNED", false},
 		{"padding", 200, publicSuffix + ":0\n", "not_found", "NOT PWNED", false},
 		{"bad-request", 400, publicPassword, "error", "ERROR", true},
@@ -151,7 +152,13 @@ func TestPasswordCLI(t *testing.T) {
 			cmd := exec.CommandContext(ctx, binary, "-password", publicPassword, "-services", services, "-o", "results", "-rf", "cli,html", "-rt", "1s")
 			cmd.Dir = dir
 			cmd.Env = append(os.Environ(), "HIBP_API_KEY=", "AGENTSEARCH_UNUSED_KEY=")
+			if tc.name == "found-email-key-present" {
+				cmd.Env = append(cmd.Env, "HIBP_API_KEY=public-test-key-not-a-credential", "AGENTSEARCH_UNUSED_KEY=public-test-key-not-a-credential")
+			}
 			output, err := cmd.CombinedOutput()
+			if strings.Contains(string(output), "public-test-key-not-a-credential") {
+				t.Fatal("email credential entered password diagnostics")
+			}
 			assertPasswordSafe(t, string(output))
 			if (err != nil) != tc.failure || calls.Load() != 1 {
 				t.Fatal("wrong password CLI exit or request count")

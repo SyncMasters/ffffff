@@ -173,7 +173,7 @@ Choose exactly one password flag. Do not combine it with `-u`, `-f`, `-email`, w
 
 This is **k-anonymity**, not zero disclosure or protection from a compromised endpoint/device. The service still sees a hash prefix and connection metadata such as the client IP. Padding requests reduce response-size disclosure, but do not prove anonymity. See the [official range API documentation](https://haveibeenpwned.com/API/v3#PwnedPasswords).
 
-The parser validates the entire bounded response, including records after a match. Each non-blank line must contain exactly a 35-hex-character suffix, a colon, and a non-negative decimal count that fits `uint64`. Suffix matching is case-insensitive. LF and CRLF are accepted; empty lines are ignored, but an empty/blank-only body is an error. Malformed lines, extra separators, signs/whitespace in counts, numeric overflow, duplicate suffixes, oversized lines, or responses over 2 MiB fail the lookup. Zero-count padding records never count as pwned. No fixed number of range rows is assumed.
+The parser validates the entire bounded response, including records after a match. Each non-blank line must contain exactly a 35-hex-character suffix, a colon, and a non-negative decimal count that fits `uint64`. Suffix matching is case-insensitive. LF and CRLF are accepted; empty lines are ignored, but whitespace-only lines and empty/blank-only bodies are errors. Malformed lines, extra separators, signs/whitespace in counts, numeric overflow, duplicate suffixes, oversized lines, or responses over 2 MiB fail the lookup. Zero-count padding records never count as pwned. No fixed number of range rows is assumed.
 
 ### Outcomes and output
 

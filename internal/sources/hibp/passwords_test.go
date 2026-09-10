@@ -66,6 +66,7 @@ func TestRangeParsing(t *testing.T) {
 		{"padding", publicSuffix + ":0", 0, false},
 		{"blank-lines", "\r\n" + publicSuffix + ":2\n\n", 2, false},
 		{"empty", "", 0, true}, {"only-blanks", "\r\n\n", 0, true},
+		{"whitespace-line", otherSuffix + ":1\n \n", 0, true},
 		{"missing-colon", publicSuffix, 0, true}, {"short", publicSuffix[:34] + ":1", 0, true},
 		{"long", publicSuffix + "A:1", 0, true}, {"nonhex", "Z" + publicSuffix[1:] + ":1", 0, true},
 		{"negative", publicSuffix + ":-1", 0, true}, {"signed", publicSuffix + ":+1", 0, true},
@@ -299,8 +300,20 @@ func TestPasswordClientValidation(t *testing.T) {
 	if err != nil || c.baseURL != DefaultPasswordsURL {
 		t.Fatal("default password endpoint invalid")
 	}
-	if _, err = c.getRange(context.Background(), "5BAA6"+publicSuffix); err == nil {
+	// Even a broken validation regression must only reach a local fixture,
+	// never the official endpoint configured above.
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))
+	defer server.Close()
+	c, err = NewPasswordClient(server.URL+"/range", client)
+	if err != nil {
+		t.Fatal("local client initialization failed")
+	}
+	if _, err = c.getRange(context.Background(), "5BAA6"+publicSuffix); err == nil || calls.Load() != 0 {
 		t.Fatal("full hash accepted by request boundary")
+	}
+	if _, err = c.lookup(context.Background(), "5BAA6", "invalid"); err == nil || calls.Load() != 0 {
+		t.Fatal("invalid local suffix made a request")
 	}
 	if _, err = NewPasswordClient("", &http.Client{}); err == nil {
 		t.Fatal("missing timeout accepted")
@@ -330,7 +343,10 @@ func TestPasswordBodyBoundsAndCancellation(t *testing.T) {
 			}))
 			defer server.Close()
 			client := server.Client()
-			client.Timeout = 100 * time.Millisecond
+			client.Timeout = time.Second
+			if name == "body-timeout" {
+				client.Timeout = 20 * time.Millisecond
+			}
 			source := passwordSourceForTest(t, server.URL+"/range", client)
 			want := InvalidResponse
 			if name == "truncated" {
