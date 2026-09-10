@@ -143,7 +143,7 @@ func printBlockedTable(results []models.Result) {
 	}
 
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Printf("⚠ Blocked sources on %d source(s):\n", len(blocked))
+	yellow.Printf("⚠ %d blocked source(s):\n", len(blocked))
 	for _, r := range blocked {
 		fmt.Printf("  • %s (%s)\n", r.SiteName, r.URL)
 	}
