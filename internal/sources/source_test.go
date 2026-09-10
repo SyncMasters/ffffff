@@ -108,8 +108,11 @@ func TestSensitiveDispatch(t *testing.T) {
 		}
 		return nil
 	})
-	if err == nil || strings.Contains(err.Error(), target.Value()) {
+	if err == nil || strings.Contains(err.Error(), "never-persist-this") {
 		t.Fatal("unsafe error")
+	}
+	if !target.Secret().Empty() {
+		t.Fatal("dispatcher retained sensitive input")
 	}
 }
 

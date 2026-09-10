@@ -32,8 +32,9 @@ func (t TargetType) Sensitive() bool { return t == TargetPassword || t == Target
 // Target is input, never a result payload. Private fields prevent accidentally
 // serializing a raw password or changing its type after construction.
 type Target struct {
-	kind  TargetType
-	value string
+	kind   TargetType
+	value  string
+	secret security.Secret
 }
 
 func NewTarget(kind TargetType, value string) (Target, error) {
@@ -42,6 +43,9 @@ func NewTarget(kind TargetType, value string) (Target, error) {
 	}
 	if value == "" {
 		return Target{}, fmt.Errorf("empty target")
+	}
+	if kind.Sensitive() {
+		return NewSensitiveTarget(kind, security.NewSecret(value))
 	}
 	return Target{kind: kind, value: value}, nil
 }
@@ -58,8 +62,27 @@ func LegacyTarget(value string) (Target, error) {
 func (t Target) Type() TargetType { return t.kind }
 
 // Value explicitly accesses input. Only search implementations should need it.
-func (t Target) Value() string { return t.value }
-func (t Target) Valid() bool   { return t.kind.Valid() && t.value != "" }
+func (t Target) Value() string {
+	if t.kind.Sensitive() {
+		return t.secret.Reveal()
+	}
+	return t.value
+}
+
+// Secret returns a shared handle, avoiding plaintext copies during dispatch.
+func (t Target) Secret() security.Secret { return t.secret }
+func NewSensitiveTarget(kind TargetType, secret security.Secret) (Target, error) {
+	if !kind.Sensitive() || secret.Empty() {
+		return Target{}, fmt.Errorf("invalid sensitive target")
+	}
+	return Target{kind: kind, secret: secret}, nil
+}
+func (t Target) Valid() bool {
+	if t.kind.Sensitive() {
+		return !t.secret.Empty()
+	}
+	return t.kind.Valid() && t.value != ""
+}
 func (t Target) String() string {
 	if t.kind.Sensitive() {
 		return security.Redacted

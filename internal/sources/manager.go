@@ -22,6 +22,9 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 	if !target.Valid() {
 		return fmt.Errorf("invalid target")
 	}
+	if target.Type().Sensitive() {
+		defer target.Secret().Destroy()
+	}
 	if emit == nil {
 		return fmt.Errorf("nil result consumer")
 	}
@@ -62,9 +65,9 @@ func (m *Manager) Search(ctx context.Context, target models.Target, emit Emit) e
 		case models.TargetEmail:
 			err = s.(EmailSearcher).SearchEmail(ctx, target.Value(), deliver)
 		case models.TargetPassword:
-			err = s.(PasswordSearcher).SearchPassword(ctx, security.NewSecret(target.Value()), deliver)
+			err = s.(PasswordSearcher).SearchPassword(ctx, target.Secret(), deliver)
 		case models.TargetPasswordHash:
-			err = s.(PasswordHashSearcher).SearchPasswordHash(ctx, security.NewSecret(target.Value()), deliver)
+			err = s.(PasswordHashSearcher).SearchPasswordHash(ctx, target.Secret(), deliver)
 		}
 		if consumerErr != nil {
 			return consumerErr

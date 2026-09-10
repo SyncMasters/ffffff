@@ -25,6 +25,10 @@ type UsernameSearcher interface {
 type EmailSearcher interface {
 	SearchEmail(context.Context, string, Emit) error
 }
+
+// PasswordSearcher receives a shared secret handle. Implementations may consume
+// it once to derive local lookup material and clear plaintext before networking.
+// A consuming password provider must not be followed by another plaintext consumer.
 type PasswordSearcher interface {
 	SearchPassword(context.Context, security.Secret, Emit) error
 }

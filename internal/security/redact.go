@@ -2,27 +2,12 @@
 package security
 
 import (
-	"encoding/json"
-	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
 )
 
 const Redacted = "[REDACTED]"
-
-// Secret requires explicit Reveal at the integration boundary. Formatting,
-// structured logging and JSON/YAML encoding never expose its value.
-// Go strings cannot be reliably zeroed; do not retain secrets unnecessarily.
-type Secret struct{ value string }
-
-func NewSecret(value string) Secret           { return Secret{value: value} }
-func (s Secret) Reveal() string               { return s.value }
-func (s Secret) String() string               { return Redacted }
-func (s Secret) GoString() string             { return Redacted }
-func (s Secret) LogValue() slog.Value         { return slog.StringValue(Redacted) }
-func (s Secret) MarshalJSON() ([]byte, error) { return json.Marshal(Redacted) }
-func (s Secret) MarshalYAML() (any, error)    { return Redacted, nil }
 
 func SensitiveKey(key string) bool {
 	key = strings.ToLower(strings.NewReplacer("-", "", "_", "", " ", "").Replace(key))
