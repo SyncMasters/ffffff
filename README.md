@@ -1,6 +1,6 @@
 # AgentSearch
 
-AgentSearch is a Go command-line tool for authorized account discovery and exposure checks. It combines configurable website profile searches with authenticated email breach lookups and key-free Pwned Passwords range checks through [Have I Been Pwned (HIBP)](https://haveibeenpwned.com/), using a common result model and output pipeline.
+AgentSearch is a Go command-line tool with an optional operator HTTP API for authorized account discovery and exposure checks. It combines configurable website profile searches with authenticated email breach lookups and key-free Pwned Passwords range checks through [Have I Been Pwned (HIBP)](https://haveibeenpwned.com/), using a common result model and output pipeline.
 
 It is intended for defensive investigations, personal exposure checks, and security research where you have permission to query the target. A match is evidence to review, not proof of identity or of a currently compromised account.
 
@@ -17,7 +17,8 @@ It is intended for defensive investigations, personal exposure checks, and secur
 | License-dependent | DOCX reports through the existing UniOffice dependency |
 | Experimental | Website uTLS support; transport combinations have known limitations |
 | Implemented | Explicit offline Pwned Passwords backend with immutable snapshots and separate corpus maintenance |
-| Planned | HTTP API, AI analysis, and additional external sources |
+| Implemented | Authenticated, bounded HTTP searches over the same username/email/password engine |
+| Planned | AI analysis and additional external sources |
 
 **For password checks, use `-password-prompt`. Never put passwords in website targets, target files, email input, or service YAML.** The `-d` flag is retained for compatibility but remains a no-op stub.
 
@@ -436,6 +437,171 @@ The website source supports username and legacy email-template searches. HIBP ha
 
 `app.NewRunner(registry).Search(ctx, target, emit)` is the source-neutral execution boundary. The dispatcher derives capabilities from small interfaces. It preserves partial results, stops on consumer errors, and does not import storage or reports. Models depend only on the standard library and the small security package. The network layer does not depend on concrete sources. HTTP clients and secrets are supplied at the application composition boundary.
 
+## Unified HTTP API (Stage 5)
+
+The separate `agentsearch-server` command reuses app/runner, capability dispatch, and the existing
+website, HIBP email, Pwned Passwords API and local sources. The CLI and its flags are unchanged.
+The server does not run CLI output/report orchestration or persist submitted searches.
+
+### Start and configure
+
+Run from the repository root, or provide absolute operator-owned configuration paths:
+
+```sh
+go build ./cmd/agentsearch-server
+# Generate an operator token; keep it out of Git, tickets and shared shell history.
+export AGENTSEARCH_API_TOKEN="$(openssl rand -hex 32)"
+./agentsearch-server -listen 127.0.0.1:8080 -s configs/sites.yaml
+```
+
+`GET /health` is public and returns `{"status":"ok"}`. It is liveness only: no network searches,
+corpus re-verification or readiness/coverage certification. Search requires a single
+`Authorization: Bearer <token>` header. The token must contain 32–4096 printable non-space ASCII
+bytes; generate it randomly, not from a memorable phrase. It is read from the named environment
+variable, never a literal command-line option. Only a SHA-256 comparison digest is retained by
+the HTTP handler; comparisons are constant-time. The process environment still contains the
+operator-supplied token. Restart to rotate it.
+
+| Server option | Default | Meaning |
+| --- | --- | --- |
+| `-listen` | `127.0.0.1:8080` | TCP listen address; explicit opt-in to other interfaces |
+| `-token-env` | `AGENTSEARCH_API_TOKEN` | Environment variable holding the API bearer token |
+| `-read-timeout` | `15s` | HTTP read limit; header reads additionally capped at 5s |
+| `-write-timeout` | `75s` | HTTP write limit; must exceed request timeout |
+| `-idle-timeout` | `60s` | Keep-alive idle limit |
+| `-request-timeout` | `60s` | Request-derived search deadline, including body parsing |
+| `-max-concurrent` | `8` | Admitted searches, including body reads; range 1–128 |
+| `-s` | `configs/sites.yaml` | Trusted site database; `-s ''` disables username search |
+| `-services` | empty | Explicit existing services YAML; enables email only when HIBP is enabled |
+| `-password-backend` | `api` | Exactly one password provider: `api` or `local` |
+| `-password-db` | empty | Local managed database root, or resolve from explicit services YAML |
+| `-w`, `-rt`, `-rl`, `-retries` | `10`, `15s`, `500ms`, `2` | Existing website workers, provider HTTP timeout, website per-host delay and website retries |
+| `-p`, `-ua`, `-utls` | empty, empty, false | Existing website proxy/User-Agent files and experimental uTLS |
+
+Email uses the existing `services.hibp.enabled`, `api_url` and `api_key_env` settings described
+above. Missing/disabled email returns 503; explicitly enabled email with missing credentials or
+invalid configuration fails startup. Password API requests remain key-free and prefix-only;
+email keys are not sent to the password endpoint. Custom upstream URLs are operator-only and
+retain the existing HTTPS/loopback and no-redirect restrictions. Clients cannot choose URLs,
+files, providers or backends.
+
+For an already imported and activated offline snapshot:
+
+```sh
+./agentsearch-server -s '' -password-backend local -password-db ./pwned-db
+```
+
+Local password lookup is offline, integrity checked and has **no API fallback**. Missing or
+invalid selected data fails startup; a lookup-time integrity/capacity failure returns 503,
+never `not_found`. The server owns one immutable snapshot, uses the existing bounded concurrent
+readers and closes it after in-flight searches drain. Activating a new generation does not
+refresh an already running server: restart to select it. No corpus download or maintenance
+endpoint is exposed. See [offline operations](docs/offline-passwords.md).
+
+### Search requests and responses
+
+Only `POST /api/v1/search` accepts searches. Send one UTF-8 JSON object with exactly `type` and
+`target`, or exactly `type` and `password`. Unknown, duplicate, mixed and null fields are rejected.
+All query parameters are rejected. GET searches and automatic path redirects are not supported.
+
+```sh
+curl http://127.0.0.1:8080/health
+
+curl http://127.0.0.1:8080/api/v1/search \
+  -H "Authorization: Bearer $AGENTSEARCH_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"type":"username","target":"example"}'
+
+curl http://127.0.0.1:8080/api/v1/search \
+  -H "Authorization: Bearer $AGENTSEARCH_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"type":"email","target":"user@example.com"}'
+
+# Synthetic demonstration only, NOT a real password.
+curl http://127.0.0.1:8080/api/v1/search \
+  -H "Authorization: Bearer $AGENTSEARCH_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary '{"type":"password","password":"example-password"}'
+```
+
+These shell examples are demonstrative: literal bodies and expanded headers can be visible in
+shell history/process arguments. For real secrets, use a client that reads input without echo
+and submits the body and authorization header in memory, without debug dumps or persistence.
+Never place a password in a URL, username/email target, filename or request-ID header.
+
+Bodies are limited to **32 KiB**, headers to the server's **16 KiB** setting, and compressed request
+bodies are unsupported. Usernames are 1–256 UTF-8 bytes and permit letters, digits, `_`, `-`, `.`
+(excluding `.` and `..` alone), not arbitrary URLs or template syntax. Email input is at most
+254 UTF-8 bytes and uses the existing single bare-address validator. Passwords are 1–4096 UTF-8
+bytes after JSON decoding: no trimming, case changes or normalization. Unpaired Unicode
+surrogate escapes are rejected instead of silently changing a password.
+
+HTTP 200 returns `{"results":[...]}` containing the existing normalized `models.Result`:
+`source`, `source_type`, `target_type`, `target`, `site_name`, `url`, `status`, `found`, `confidence`,
+`duration`, and optional `evidence`, `metadata`, `error`, `final_url`. Duration is integer
+nanoseconds, not milliseconds. A successful empty website selection returns `{"results":[]}`.
+A successful negative password observation has a redacted target, `status: "not_found"`,
+`found: false` and `metadata.occurrences: "0"`. Confidence remains 0 for an API negative and
+100 for a verified local negative; neither proves that a password is safe.
+
+Errors have the predictable form:
+
+```json
+{"error":{"code":"unauthorized","message":"valid bearer token required"}}
+```
+
+Operational failures can include `results` with partial observations; callers must inspect
+both the HTTP status/error and individual result statuses. A failing result uses generic error
+text with diagnostic URLs/evidence/metadata removed. Raw provider errors, filesystem paths,
+upstream response bodies and credential details are not serialized as error messages.
+A `blocked` website observation remains a normalized observation, not a caller-auth failure.
+Responses are buffered, not streamed, with a 10,000-result cap (503 on exceeding it).
+
+| HTTP status | Meaning |
+| --- | --- |
+| 200 | Health or completed search, including found/not-found/blocked observations |
+| 400 | Invalid JSON, shape, type, target, forbidden query parameters or unreadable body |
+| 401 | Missing/invalid API bearer token; not an upstream HIBP credential error |
+| 404 / 405 | Unknown endpoint / unsupported method (with `Allow`) |
+| 408 | Client cancellation if still writable, or body-read timeout |
+| 413 / 415 | Oversized body / unsupported content type or content encoding |
+| 429 | Admission capacity exhausted or upstream rate limiting; safe `Retry-After` when available |
+| 500 | Unexpected internal failure; no panic values or stack traces returned |
+| 502 | Upstream network, response or other lookup failure |
+| 503 | Disabled search, upstream credential/access/unavailability, local failure or result cap |
+| 504 | Search/provider deadline exceeded |
+
+A disconnected client may receive no response. Context cancellation reaches the existing engine;
+there is no detached background search. Shutdown cancels requests and allows a 10s HTTP grace
+period before closing connections, then drains app-owned searches before closing the snapshot.
+Ordinary kernel file reads are not guaranteed context-preemptible.
+
+### Deployment and privacy limits
+
+This is a **controlled-deployment API**, not a public multi-tenant service. It has one shared
+operator token, not accounts, RBAC, quotas or a complete abuse-prevention system. There is no
+built-in TLS: retain loopback binding or deploy behind an access-controlled TLS reverse proxy.
+If exposing another interface, configure firewall/access controls and HTTPS before use. Do not
+configure proxies, load balancers, clients or observability tools to log request bodies,
+authorization headers or query strings; invalid incoming URLs can contain secrets even though
+this server never echoes them. Query rejection cannot erase copies made by an earlier proxy.
+
+The transport logs only server-generated request ID, fixed route label, status and elapsed time;
+it ignores incoming request IDs and never logs arbitrary paths, bodies or headers. Existing
+website-engine logs may identify username targets, so protect those logs as personal data.
+Passwords stay on the password-only dispatch path and are never website targets. Request buffers
+and consumable `security.Secret` handles are cleared/destroyed on success, error, cancellation
+and consumer failure. JSON, Go runtime, HTTP/TLS and client buffers can create copies: this is
+best-effort lifecycle management, **not guaranteed secure-memory erasure**.
+
+No wildcard CORS, cookies/sessions, debug/pprof/config/filesystem endpoints, persistent search
+storage, auto-reload, AI or bulk password requests are implemented. The existing website
+proxy/retry/uTLS/limiter limitations still apply. Tests use local provider fixtures and synthetic
+corpus data, not live credentials or a production-scale corpus. Native Windows execution,
+production load/durability and legal suitability remain **UNVERIFIED**. Review the current
+[HIBP Terms](https://haveibeenpwned.com/TermsOfUse) for actual public/commercial use, redistribution
+or re-serving; this endpoint and operator-owned offline data do not certify legal permission.
+
 ## Development and verification
 
 ```sh
@@ -445,6 +611,7 @@ go vet ./...
 go build ./cmd/agentsearch
 go build ./cmd/convert
 go build ./cmd/agentsearch-corpus
+go build ./cmd/agentsearch-server
 ```
 
 Tests use local HTTP servers, runtime-generated email mock credentials, and obvious public password fixtures, not real HIBP keys, private passwords, or external API calls. They cover HIBP response/error semantics, headers, encoding, redirect protection, cancellation, timeouts, redaction, normalized results, and CLI execution, alongside the website regression suite. Password tests additionally cover independent SHA-1 vectors, exact request prefix/suffix boundaries, padding and strict range parsing, shared-buffer destruction, prompt injection/restoration, both password flags, and output/report leakage. Stage 3 added `golang.org/x/term` for terminal input. Stage 4 promotes the already-present `golang.org/x/sys` to a direct dependency for platform locking/space checks, without a version upgrade or new database, mmap, crypto or API framework. Synthetic offline tests protect range integrity, activation/leases, concurrency and secret/backend isolation.
@@ -463,7 +630,7 @@ In addition to output-directory and error-propagation limitations noted above:
 - HIBP responses are bounded to 2 MiB. No pagination, local cache, email hash-range lookup, pastes, domain enumeration, or separate stealer-log API is implemented.
 - HIBP API behavior is tested against local contract fixtures, not certified against a live subscription during CI.
 
-See [ROADMAP.md](ROADMAP.md) for the next stages. Stage 3 API integration and Stage 4 offline database/maintenance are implemented. Acquisition stays external; a downloader, HTTP API, AI analysis and additional external sources are not implemented. Review current HIBP Terms before public/commercial deployment or corpus redistribution; software availability is not legal certification.
+See [ROADMAP.md](ROADMAP.md) for the next stages. Stages 3–5 (password API, offline database/maintenance, unified HTTP API) are implemented. Acquisition stays external; a downloader, AI analysis and additional external sources are not implemented. Review current HIBP Terms before public/commercial deployment or corpus redistribution; software availability is not legal certification.
 
 ## License
 

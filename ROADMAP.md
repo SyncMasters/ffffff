@@ -50,9 +50,24 @@ power-loss testing and production-scale validation remain **UNVERIFIED**. Comple
 implementation is not a production-readiness, secure-memory or legal certification.
 See the [offline operations guide](docs/offline-passwords.md). No bulk password checking is implemented.
 
-## Later integrations — planned, not implemented
+## Stage 5 — Unified HTTP API: implemented
 
-- [ ] HTTP API over the existing runner and normalized results.
+- [x] Separate stdlib HTTP server over the existing app/runner and capability dispatch.
+- [x] Public lightweight `GET /health` and authenticated `POST /api/v1/search` for username/email/password.
+- [x] Existing normalized results, safe errors/partial observations, and upstream Retry-After mapping.
+- [x] Strict bounded JSON input, password-body-only contract, secret ownership and cleanup.
+- [x] Operator-selected API/local password backend, exactly one consumer and no local fallback.
+- [x] Environment bearer token, loopback default, finite timeouts, request cancellation and admission bounds.
+- [x] Safe request IDs/access logs, graceful shutdown and app-owned immutable snapshot lifetime.
+- [x] Local transport/provider tests for routing, auth, validation, leakage, errors, cancellation and concurrency.
+
+This is a controlled-deployment API, not a production/public multi-tenant service. TLS termination,
+operator access controls and HIBP Terms review remain deployment responsibilities. No search
+persistence, browser CORS, accounts, debug endpoints, bulk searches or corpus acquisition were added.
+Native Windows execution, full-corpus/production-scale verification, power-loss durability and legal
+suitability remain **UNVERIFIED**. See the HTTP startup, contract and limits in the [README](README.md).
+
+## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Additional external sources through capability-specific interfaces.
 
