@@ -26,7 +26,7 @@ func main() {
 
 // run returns an exit code rather than exiting so secrets and terminal state
 // are cleaned before main calls os.Exit. The prompt is injectable for CI.
-func run(parent context.Context, args []string, prompt security.PasswordPrompt) int {
+func run(parent context.Context, args []string, prompt security.PasswordPrompt) (exitCode int) {
 	cfg, err := config.ParseArgs(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return 0
@@ -40,8 +40,27 @@ func run(parent context.Context, args []string, prompt security.PasswordPrompt) 
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, cfg.TotalTimeout)
 	defer cancel()
+
+	var application *app.App
+	defer func() {
+		if application != nil {
+			if err := application.Close(); err != nil {
+				slog.Error("application cleanup failed", "error", err)
+				exitCode = 1
+			}
+		}
+	}()
 	if cfg.Mode == config.ModePassword {
-		slog.Info("password lookup starting", "source", "Pwned Passwords", "method", "sha1-k-anonymity")
+		method := "sha1-k-anonymity"
+		if cfg.PasswordBackend == config.PasswordBackendLocal {
+			method = "sha1-offline"
+			application, err = app.NewWithContext(ctx, cfg)
+			if err != nil {
+				slog.Error("initialization error", "error", err)
+				return 1
+			}
+		}
+		slog.Info("password lookup starting", "source", "Pwned Passwords", "method", method)
 		if cfg.PasswordPrompt {
 			if prompt == nil {
 				slog.Error("password prompt is unavailable")
@@ -62,7 +81,9 @@ func run(parent context.Context, args []string, prompt security.PasswordPrompt) 
 	} else {
 		slog.Info("agentsearch starting", "targets", len(cfg.Targets), "workers", cfg.Workers, "sites", cfg.SitesFile, "proxies", cfg.ProxiesFile, "output", cfg.OutputDir, "formats", cfg.OutputFormats)
 	}
-	application, err := app.New(cfg)
+	if application == nil {
+		application, err = app.New(cfg)
+	}
 	if err != nil {
 		slog.Error("initialization error", "error", err)
 		return 1

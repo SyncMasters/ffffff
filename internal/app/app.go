@@ -2,12 +2,14 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/network"
+	"github.com/johan-larp/agentsearch/internal/passworddb"
 	"github.com/johan-larp/agentsearch/internal/ratelimit"
 	"github.com/johan-larp/agentsearch/internal/security"
 	"github.com/johan-larp/agentsearch/internal/sources"
@@ -18,12 +20,30 @@ import (
 type App struct {
 	cfg    *config.AppConfig
 	runner *Runner
+	close  func() error
 }
 
 // New constructs only the providers selected by the CLI mode.
-func New(cfg *config.AppConfig) (*App, error) {
+func New(cfg *config.AppConfig) (*App, error) { return NewWithContext(context.Background(), cfg) }
+
+// NewWithContext permits cancellable local snapshot preparation before prompting.
+// Existing API/website constructors and dispatch behavior remain unchanged.
+func NewWithContext(ctx context.Context, cfg *config.AppConfig) (*App, error) {
 	if cfg.Mode == config.ModePassword {
-		application, err := newPasswordApp(cfg)
+		var application *App
+		var err error
+		switch cfg.PasswordBackend {
+		case config.PasswordBackendLocal:
+			application, err = newLocalPasswordApp(ctx, cfg)
+		case "", config.PasswordBackendAPI:
+			if cfg.PasswordDatabasePath != "" {
+				err = fmt.Errorf("database path requires local password backend")
+			} else {
+				application, err = newPasswordApp(cfg)
+			}
+		default:
+			err = fmt.Errorf("password backend must be api or local")
+		}
 		if err != nil {
 			cfg.Password.Destroy()
 		}
@@ -132,4 +152,43 @@ func newPasswordApp(cfg *config.AppConfig) (*App, error) {
 		return nil, err
 	}
 	return NewWithSources(cfg, registry), nil
+}
+
+// Close releases app-owned local resources; other source lifecycles are unchanged.
+func (a *App) Close() error {
+	if a.close != nil {
+		return a.close()
+	}
+	return nil
+}
+
+func newLocalPasswordApp(ctx context.Context, cfg *config.AppConfig) (*App, error) {
+	path := cfg.PasswordDatabasePath
+	if path == "" {
+		var err error
+		path, err = config.LocalPasswordPath(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	snapshot, err := passworddb.Open(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	source, err := hibp.NewLocalPasswordSource(snapshot)
+	if err != nil {
+		snapshot.Close()
+		return nil, err
+	}
+	registry := sources.NewRegistry()
+	if err = registry.Register(source); err != nil {
+		snapshot.Close()
+		return nil, err
+	}
+	application := NewWithSources(cfg, registry)
+	application.close = snapshot.Close
+	if snapshot.Info().Recovered {
+		slog.Warn("offline database activation recovered from redundant record", "dataset_id", snapshot.Info().DatasetID)
+	}
+	return application, nil
 }

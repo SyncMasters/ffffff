@@ -18,10 +18,11 @@ type ServicesConfig struct {
 	Services map[string]ServiceConfig `yaml:"services"`
 }
 type ServiceConfig struct {
-	PasswordsAPIURL string `yaml:"passwords_api_url"`
-	Enabled         bool   `yaml:"enabled"`
-	APIURL          string `yaml:"api_url"`
-	APIKeyEnv       string `yaml:"api_key_env"`
+	PasswordsDatabasePath string `yaml:"passwords_database_path"`
+	PasswordsAPIURL       string `yaml:"passwords_api_url"`
+	Enabled               bool   `yaml:"enabled"`
+	APIURL                string `yaml:"api_url"`
+	APIKeyEnv             string `yaml:"api_key_env"`
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -47,4 +48,23 @@ func LoadServices(path string) (*ServicesConfig, error) {
 		}
 	}
 	return &cfg, nil
+}
+
+// LocalPasswordPath resolves only non-secret local settings. Relative paths use
+// the working directory. There is no environment expansion or backend discovery.
+func LocalPasswordPath(cfg *AppConfig) (string, error) {
+	path := cfg.PasswordDatabasePath
+	if cfg.ServicesFile != "" {
+		services, err := LoadServices(cfg.ServicesFile)
+		if err != nil {
+			return "", fmt.Errorf("invalid local password services configuration")
+		}
+		if path == "" {
+			path = services.Services["hibp"].PasswordsDatabasePath
+		}
+	}
+	if path == "" {
+		return "", fmt.Errorf("local password backend requires a database path")
+	}
+	return path, nil
 }

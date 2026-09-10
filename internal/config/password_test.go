@@ -78,3 +78,26 @@ func TestRepeatedPasswordFlagClearsOriginalOnFailure(t *testing.T) {
 		t.Fatal("shared flag input retained")
 	}
 }
+
+func TestPasswordBackendSelection(t *testing.T) {
+	for _, args := range [][]string{
+		{"-password-prompt", "-password-backend", "local"},
+		{"-password-prompt", "-password-db", "data"},
+		{"-password-prompt", "-password-backend", "other"},
+		{"-password-prompt", "-password-backend", "api", "-password-backend", "local"},
+		{"-u", "alice", "-password-backend", "local"},
+	} {
+		if cfg, err := ParseArgs(args); err == nil {
+			cfg.Password.Destroy()
+			t.Fatal("invalid backend arguments accepted")
+		}
+	}
+	cfg, err := ParseArgs([]string{"-password-prompt"})
+	if err != nil || cfg.PasswordBackend != PasswordBackendAPI {
+		t.Fatal("API default changed")
+	}
+	cfg, err = ParseArgs([]string{"-password-prompt", "-password-backend", "local", "-password-db", "data"})
+	if err != nil || cfg.PasswordBackend != PasswordBackendLocal || cfg.PasswordDatabasePath != "data" {
+		t.Fatal("explicit local backend rejected")
+	}
+}

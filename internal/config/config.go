@@ -13,6 +13,11 @@ import (
 	"github.com/johan-larp/agentsearch/internal/security"
 )
 
+const (
+	PasswordBackendAPI   = "api"
+	PasswordBackendLocal = "local"
+)
+
 type SearchMode string
 
 const (
@@ -23,26 +28,28 @@ const (
 
 // AppConfig holds CLI options and runtime settings.
 type AppConfig struct {
-	Mode                SearchMode
-	Password            security.Secret `json:"-" yaml:"-"`
-	PasswordPrompt      bool
-	ServicesFile        string
-	Targets             []string
-	SitesFile           string
-	ProxiesFile         string
-	OutputDir           string
-	OutputFormats       []string
-	ReportFormats       []string
-	Workers             int
-	RequestTimeout      time.Duration
-	TotalTimeout        time.Duration
-	MaxIdleConns        int
-	MaxIdleConnsPerHost int
-	RateLimitPerHost    time.Duration
-	UserAgentFile       string
-	DeepSearch          bool
-	UseUTLS             bool
-	MaxRetries          int
+	Mode                 SearchMode
+	Password             security.Secret `json:"-" yaml:"-"`
+	PasswordPrompt       bool
+	PasswordBackend      string
+	PasswordDatabasePath string
+	ServicesFile         string
+	Targets              []string
+	SitesFile            string
+	ProxiesFile          string
+	OutputDir            string
+	OutputFormats        []string
+	ReportFormats        []string
+	Workers              int
+	RequestTimeout       time.Duration
+	TotalTimeout         time.Duration
+	MaxIdleConns         int
+	MaxIdleConnsPerHost  int
+	RateLimitPerHost     time.Duration
+	UserAgentFile        string
+	DeepSearch           bool
+	UseUTLS              bool
+	MaxRetries           int
 }
 
 // ParseFlags parses command-line options.
@@ -75,15 +82,33 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 	}
 	flags.Var(password, "password", "Single Pwned Passwords lookup; exposes the argument to shell history/process listings; prefer -password-prompt")
 	passwordPrompt := flags.Bool("password-prompt", false, "Read one password from an interactive terminal without echo (recommended)")
+	backend, database := PasswordBackendAPI, ""
+	usedBackend, usedDatabase := false, false
+	flags.Func("password-backend", "Password backend: api (default) or local; never automatically falls back", func(value string) error {
+		if usedBackend {
+			return fmt.Errorf("password backend must be supplied only once")
+		}
+		usedBackend = true
+		backend = value
+		return nil
+	})
+	flags.Func("password-db", "Managed offline database root; requires explicit local backend", func(value string) error {
+		if usedDatabase {
+			return fmt.Errorf("password database must be supplied only once")
+		}
+		usedDatabase = true
+		database = value
+		return nil
+	})
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -password VALUE | -password-prompt [options]")
 		fmt.Fprintln(flags.Output(), "Website flags never query HIBP. Email lookups require enabled service settings and an API key.")
-		fmt.Fprintln(flags.Output(), "Password range lookups require no API key; only five SHA-1 characters are transmitted.")
+		fmt.Fprintln(flags.Output(), "Password API lookups require no API key and transmit only five SHA-1 characters. Explicit local mode makes no requests.")
 		flags.PrintDefaults()
 	}
 	var (
 		email    = flags.String("email", "", "Email breach lookup through HIBP (not a website search)")
-		services = flags.String("services", "configs/services.yaml", "Service configuration for -email or an explicit password endpoint override")
+		services = flags.String("services", "configs/services.yaml", "Service configuration for -email or explicit password settings")
 		u        = flags.String("u", "", "Target username or email")
 		f        = flags.String("f", "", "File with targets (one per line)")
 		s        = flags.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
@@ -126,7 +151,18 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 			usedServices = true
 		}
 	})
+
 	selectedPassword := password.seen || selectedPrompt
+	if !selectedPassword && (usedBackend || usedDatabase) {
+		return nil, fmt.Errorf("password backend options require password mode")
+	}
+	if selectedPassword && backend != PasswordBackendAPI && backend != PasswordBackendLocal {
+		return nil, fmt.Errorf("password backend must be api or local")
+	}
+	if selectedPassword && usedDatabase && (backend != PasswordBackendLocal || database == "") {
+		return nil, fmt.Errorf("password database requires explicit local mode and a nonempty path")
+	}
+
 	if selectedPassword {
 		if password.seen && selectedPrompt || selectedPrompt && !*passwordPrompt {
 			return nil, fmt.Errorf("choose exactly one of -password or -password-prompt")
@@ -134,7 +170,7 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if password.seen && password.value.Empty() {
 			return nil, fmt.Errorf("password input must not be empty")
 		}
-		allowed := map[string]bool{"password": true, "password-prompt": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		allowed := map[string]bool{"password": true, "password-prompt": true, "password-backend": true, "password-db": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
 		invalid := false
 		flags.Visit(func(f *flag.Flag) {
 			if !allowed[f.Name] {
@@ -142,7 +178,7 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 			}
 		})
 		if invalid || flags.NArg() != 0 {
-			return nil, fmt.Errorf("password mode accepts one input and only services, timeout, output and report options")
+			return nil, fmt.Errorf("password mode accepts one input and only backend, database, services, timeout, output and report options")
 		}
 		if *rt <= 0 || *tt <= 0 {
 			return nil, fmt.Errorf("password lookup timeouts must be positive")
@@ -195,6 +231,8 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		cfg.Mode = ModePassword
 		cfg.Password = password.value
 		cfg.PasswordPrompt = *passwordPrompt
+		cfg.PasswordBackend = backend
+		cfg.PasswordDatabasePath = database
 		if usedServices {
 			cfg.ServicesFile = *services
 		}
@@ -237,6 +275,13 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		}
 	}
 
+	if cfg.Mode == ModePassword && cfg.PasswordBackend == PasswordBackendLocal {
+		path, err := LocalPasswordPath(cfg)
+		if err != nil {
+			return nil, err
+		}
+		cfg.PasswordDatabasePath = path
+	}
 	if cfg.Mode == ModePassword {
 		for _, format := range cfg.OutputFormats {
 			if format != "json" && format != "csv" && format != "txt" {
