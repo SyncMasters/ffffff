@@ -166,6 +166,9 @@ func TestPasswordCLI(t *testing.T) {
 			if !strings.Contains(string(output), tc.label) || !strings.Contains(string(output), "shell history") || !strings.Contains(string(output), "-password-prompt") {
 				t.Fatal("password result or argument warning missing")
 			}
+			if strings.Contains(string(output), "workers=") {
+				t.Fatal("password lookup advertised website workers")
+			}
 			verifyPasswordOutputs(t, dir, tc.status)
 		})
 	}

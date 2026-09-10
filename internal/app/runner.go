@@ -65,7 +65,11 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) searchTarget(ctx context.Context, target models.Target) error {
-	slog.Info("starting search", "target", target, "workers", a.cfg.Workers)
+	if target.Type() == models.TargetPassword {
+		slog.Info("starting search", "target", target)
+	} else {
+		slog.Info("starting search", "target", target, "workers", a.cfg.Workers)
+	}
 	start := time.Now()
 	store, err := storage.NewManager(a.cfg.OutputDir, a.cfg.OutputFormats, target.String())
 	if err != nil {
