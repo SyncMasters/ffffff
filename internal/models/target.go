@@ -1,0 +1,80 @@
+package models
+
+import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/johan-larp/agentsearch/internal/security"
+)
+
+type TargetType string
+
+const (
+	TargetUsername     TargetType = "username"
+	TargetEmail        TargetType = "email"
+	TargetPassword     TargetType = "password"
+	TargetPasswordHash TargetType = "password_hash"
+)
+
+func (t TargetType) Valid() bool {
+	switch t {
+	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash:
+		return true
+	}
+	return false
+}
+func (t TargetType) Sensitive() bool { return t == TargetPassword || t == TargetPasswordHash }
+
+// Target is input, never a result payload. Private fields prevent accidentally
+// serializing a raw password or changing its type after construction.
+type Target struct {
+	kind  TargetType
+	value string
+}
+
+func NewTarget(kind TargetType, value string) (Target, error) {
+	if !kind.Valid() {
+		return Target{}, fmt.Errorf("unsupported target type")
+	}
+	if value == "" {
+		return Target{}, fmt.Errorf("empty target")
+	}
+	return Target{kind: kind, value: value}, nil
+}
+
+// LegacyTarget preserves -u/-f string substitution, including email-like inputs.
+// It is deliberately not a strict email validator.
+func LegacyTarget(value string) (Target, error) {
+	kind := TargetUsername
+	if strings.Contains(value, "@") {
+		kind = TargetEmail
+	}
+	return NewTarget(kind, value)
+}
+func (t Target) Type() TargetType { return t.kind }
+
+// Value explicitly accesses input. Only search implementations should need it.
+func (t Target) Value() string { return t.value }
+func (t Target) Valid() bool   { return t.kind.Valid() && t.value != "" }
+func (t Target) String() string {
+	if t.kind.Sensitive() {
+		return security.Redacted
+	}
+	return t.value
+}
+func (t Target) GoString() string     { return t.String() }
+func (t Target) LogValue() slog.Value { return slog.StringValue(t.String()) }
+func (t Target) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type  TargetType `json:"type"`
+		Value string     `json:"value"`
+	}{t.kind, t.String()})
+}
+func (t Target) MarshalYAML() (any, error) {
+	return struct {
+		Type  TargetType `yaml:"type"`
+		Value string     `yaml:"value"`
+	}{t.kind, t.String()}, nil
+}
