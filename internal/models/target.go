@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"strings"
+	"unicode"
 
 	"github.com/johan-larp/agentsearch/internal/security"
 )
@@ -77,4 +79,27 @@ func (t Target) MarshalYAML() (any, error) {
 		Type  TargetType `yaml:"type"`
 		Value string     `yaml:"value"`
 	}{t.kind, t.String()}, nil
+}
+
+// NewEmailTarget accepts a single bare address, trims surrounding whitespace,
+// and preserves its case and plus tags. Display names and internal whitespace
+// are intentionally unsupported. This does not check deliverability.
+func NewEmailTarget(value string) (Target, error) {
+	value = strings.TrimSpace(value)
+	invalid := func() (Target, error) {
+		return Target{}, fmt.Errorf("invalid email address; provide one bare address without a display name")
+	}
+	if value == "" || len(value) > 254 || strings.ContainsAny(value, "<>") {
+		return invalid()
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return invalid()
+		}
+	}
+	address, err := mail.ParseAddress(value)
+	if err != nil || address.Address != value || address.Name != "" {
+		return invalid()
+	}
+	return NewTarget(TargetEmail, value)
 }

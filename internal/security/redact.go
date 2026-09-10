@@ -27,7 +27,7 @@ func (s Secret) MarshalYAML() (any, error)    { return Redacted, nil }
 func SensitiveKey(key string) bool {
 	key = strings.ToLower(strings.NewReplacer("-", "", "_", "", " ", "").Replace(key))
 	switch key {
-	case "password", "passwd", "passwordhash", "apikey", "xapikey", "authorization", "proxyauthorization", "token", "accesstoken", "refreshtoken", "secret", "clientsecret", "cookie", "setcookie":
+	case "password", "passwd", "passwordhash", "apikey", "xapikey", "hibpapikey", "authorization", "proxyauthorization", "token", "accesstoken", "refreshtoken", "secret", "clientsecret", "cookie", "setcookie":
 		return true
 	}
 	return false

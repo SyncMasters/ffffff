@@ -41,3 +41,15 @@ func TestSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestHIBPHeaderRedaction(t *testing.T) {
+	fields := Fields(map[string]string{"hibp-api-key": "test-only-value", "HIBP_API_KEY": "another-test-value", "Authorization": "Bearer test-only-value"})
+	for _, v := range fields {
+		if v != Redacted {
+			t.Fatal("sensitive header was not redacted")
+		}
+	}
+	if got := Redact("hibp-api-key: test-only-value"); strings.Contains(got, "test-only-value") {
+		t.Fatal("key-value diagnostic was not redacted")
+	}
+}

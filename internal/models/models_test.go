@@ -70,3 +70,17 @@ func TestResultNormalization(t *testing.T) {
 		t.Fatal("mutated input")
 	}
 }
+
+func TestEmailTargets(t *testing.T) {
+	for _, tt := range []struct{ value, want string }{{" Alice+tag@Example.test ", "Alice+tag@Example.test"}, {"a@example.test", "a@example.test"}} {
+		target, err := NewEmailTarget(tt.value)
+		if err != nil || target.Type() != TargetEmail || target.Value() != tt.want {
+			t.Fatal("email changed or rejected", err)
+		}
+	}
+	for _, value := range []string{"", "no-at", "a@", "@b", "Name <a@b.test>", "a b@example.test", "a@example.test\nBcc:someone"} {
+		if _, err := NewEmailTarget(value); err == nil {
+			t.Error("invalid email accepted")
+		}
+	}
+}
