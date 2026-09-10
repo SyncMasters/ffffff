@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"log/slog"
 	"os"
 
@@ -17,6 +19,9 @@ func main() {
 	slog.SetDefault(logger)
 
 	cfg, err := config.ParseFlags()
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
 	if err != nil {
 		slog.Error("configuration error", "error", err)
 		os.Exit(1)

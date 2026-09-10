@@ -10,6 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const DefaultHIBPKeyEnv = "HIBP_API_KEY"
+
 // ServicesConfig is an opt-in configuration layer. Loading it neither registers
 // providers nor reads environment variables or makes network requests.
 type ServicesConfig struct {

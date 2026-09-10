@@ -76,3 +76,28 @@ func TestExternalNativeOverrides(t *testing.T) {
 		t.Fatalf("native override lost: %+v", sites[0])
 	}
 }
+
+func TestEmailCLIParsing(t *testing.T) {
+	cfg, err := ParseArgs([]string{"-email", " Alice+tag@Example.test ", "-services", "custom.yaml", "-rt", "2s", "-of", "json,csv", "-rf", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mode != ModeEmail || cfg.Targets[0] != "Alice+tag@Example.test" || cfg.ServicesFile != "custom.yaml" || len(cfg.OutputFormats) != 2 || len(cfg.ReportFormats) != 0 {
+		t.Fatal("incorrect email configuration")
+	}
+	for _, args := range [][]string{
+		{"-email", ""}, {"-email", "invalid"}, {"-email", "a@example.test", "-u", "alice"},
+		{"-email", "a@example.test", "-f", "missing-file"}, {"-email", "a@example.test", "-p", "proxy-list"},
+		{"-email", "a@example.test", "-utls"}, {"-email", "a@example.test", "-retries", "2"},
+		{"-email", "a@example.test", "-rt", "0s"}, {"-email", "a@example.test", "extra"},
+		{"-u", "alice", "-services", "custom.yaml"},
+	} {
+		if _, err := ParseArgs(args); err == nil {
+			t.Error("ambiguous or invalid arguments accepted")
+		}
+	}
+	cfg, err = ParseArgs([]string{"-u", "alice@example.test"})
+	if err != nil || cfg.Mode != ModeWebsites {
+		t.Fatal("legacy email-like website input changed", err)
+	}
+}

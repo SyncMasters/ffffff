@@ -43,3 +43,25 @@ func TestApplicationWithoutWebsiteInfrastructure(t *testing.T) {
 		t.Fatal("generic path failed", results)
 	}
 }
+
+func TestHIBPConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	services := filepath.Join(dir, "services.yaml")
+	t.Setenv(config.DefaultHIBPKeyEnv, "")
+	cfg := &config.AppConfig{Mode: config.ModeEmail, ServicesFile: services, Targets: []string{"alice@example.test"}}
+	if _, err := New(cfg); err == nil {
+		t.Fatal("missing services file accepted")
+	}
+	if err := os.WriteFile(services, []byte("services:\n  hibp:\n    enabled: false\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(cfg); err == nil {
+		t.Fatal("disabled service accepted")
+	}
+	if err := os.WriteFile(services, []byte("services:\n  hibp:\n    enabled: true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(cfg); err == nil {
+		t.Fatal("missing API key accepted")
+	}
+}

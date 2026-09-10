@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/models"
 	"github.com/johan-larp/agentsearch/internal/report"
 	"github.com/johan-larp/agentsearch/internal/sources"
@@ -32,6 +33,9 @@ func (a *App) Run(ctx context.Context) error {
 
 	for _, value := range a.cfg.Targets {
 		target, err := models.LegacyTarget(value)
+		if a.cfg.Mode == config.ModeEmail {
+			target, err = models.NewEmailTarget(value)
+		}
 		if err != nil {
 			return err
 		}
@@ -43,6 +47,10 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		if err := a.searchTarget(ctx, target); err != nil {
 			slog.Error("search target failed", "target", target, "error", err)
+			// Preserve the legacy website exit policy; new email mode reports failures.
+			if a.cfg.Mode == config.ModeEmail {
+				return err
+			}
 		}
 	}
 	return nil
@@ -75,12 +83,12 @@ func (a *App) searchTarget(ctx context.Context, target models.Target) error {
 func (a *App) logResult(res models.Result) {
 	switch res.Status {
 	case models.StatusFound:
-		slog.Info("profile found", "site", res.SiteName, "url", res.URL, "confidence", res.Confidence)
+		slog.Info("match found", "source", res.SiteName, "url", res.URL, "confidence", res.Confidence)
 	case models.StatusBlocked:
-		slog.Warn("blocked by WAF", "site", res.SiteName, "url", res.URL)
+		slog.Warn("source blocked", "source", res.SiteName, "url", res.URL)
 	case models.StatusError:
-		slog.Debug("request error", "site", res.SiteName, "error", res.Error)
+		slog.Debug("lookup error", "source", res.SiteName, "error", res.Error)
 	default:
-		slog.Debug("profile not found", "site", res.SiteName, "url", res.URL)
+		slog.Debug("no match found", "source", res.SiteName, "url", res.URL)
 	}
 }

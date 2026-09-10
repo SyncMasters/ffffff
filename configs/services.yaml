@@ -1,5 +1,5 @@
-# Reserved for future service integrations. Not loaded by the legacy CLI.
-# Loading this file does not activate services or read credentials.
+# Loaded only for explicit -email lookups. Legacy -u/-f searches ignore it.
+# Set enabled to true to allow HIBP email lookups.
 # Only an environment variable NAME belongs here, never a key value.
 services:
   hibp:
