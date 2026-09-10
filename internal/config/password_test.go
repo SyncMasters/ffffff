@@ -45,7 +45,8 @@ func TestPasswordFlagsRejectAmbiguityWithoutLeaks(t *testing.T) {
 		{"-password-prompt", "-f", "missing"}, {"-password-prompt", "-retries", "2"},
 		{"-password", publicPassword, "-rt", "0s"}, {"-password-prompt", "-tt", "-1s"},
 		{"-password", publicPassword, "-p", publicPassword}, {"-password", publicPassword, "extra"},
-		{"-password", publicPassword, "-rt", publicPassword}, {"-rt", publicPassword, "-password", publicPassword},
+		{"-password", publicPassword, "-rt", publicPassword},
+		{"-password", publicPassword, "-of", publicPassword}, {"-password-prompt", "-rf", publicPassword}, {"-rt", publicPassword, "-password", publicPassword},
 		{"-unknown=" + publicPassword, "-password", publicPassword},
 	} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {

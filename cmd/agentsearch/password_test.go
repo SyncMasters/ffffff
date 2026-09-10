@@ -53,6 +53,17 @@ func verifyPasswordOutputs(t *testing.T, dir, wantStatus string) {
 			t.Fatal("expected normalized output is missing")
 		}
 		assertPasswordSafe(t, string(b))
+		if strings.HasSuffix(path, ".txt") || strings.HasSuffix(path, ".html") {
+			label := "ERROR"
+			if wantStatus == "found" {
+				label = "PWNED"
+			} else if wantStatus == "not_found" {
+				label = "NOT PWNED"
+			}
+			if !strings.Contains(string(b), label) || !strings.Contains(string(b), "sha1-k-anonymity") {
+				t.Fatal("human output omitted password outcome or method")
+			}
+		}
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, "results/[REDACTED].json"))
 	var rows []models.Result

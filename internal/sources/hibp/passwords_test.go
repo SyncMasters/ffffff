@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,6 +26,9 @@ import (
 func TestPasswordSHA1KnownVectors(t *testing.T) {
 	for _, tc := range []struct{ name, input, prefix, suffix string }{
 		{"common", "password", "5BAA6", "1E4C9B93F3F0682250B6CF8331B7EE68FD8"},
+		{"spaces", " password ", "E6EE5", "DBAB4167ECE69097D192D7EE8B3B5AA5292"},
+		{"unicode", "p\u00e4ssw\u00f6rd", "F517D", "DF1D32A112FF1AD55C66D1B12CB38E7E8F7"},
+		{"case", "Password", "8BE3C", "943B1609FFFBFC51AAD666D0A04ADF83C9D"},
 		{"abc", "abc", "A9993", "E364706816ABA3E25717850C26C9CD0D89D"},
 		{"empty", "", "DA39A", "3EE5E6B4B0D3255BFEF95601890AFD80709"},
 		{"sentence", "The quick brown fox jumps over the lazy dog", "2FD4E", "1C67A2D28FCED849EE1BB76E7391B93EB12"},
@@ -127,6 +131,8 @@ func TestPasswordRequestBoundaryAndSafeResult(t *testing.T) {
 	client := server.Client()
 	client.Timeout = time.Second
 	client.Jar, _ = cookiejar.New(nil) // Constructor must discard any injected jar.
+	cookieURL, _ := url.Parse(server.URL)
+	client.Jar.SetCookies(cookieURL, []*http.Cookie{{Name: "fixture", Value: "must-not-be-sent"}})
 	source := passwordSourceForTest(t, server.URL+"/range", client)
 	if len(sources.Capabilities(source)) != 1 || !sources.Supports(source, models.TargetPassword) || sources.Supports(source, models.TargetEmail) {
 		t.Fatal("password capability not isolated")
@@ -173,6 +179,8 @@ func TestPasswordStatuses(t *testing.T) {
 		{"empty", 200, "", models.StatusError, InvalidResponse, ""},
 		{"malformed", 200, "invalid", models.StatusError, InvalidResponse, ""},
 		{"bad-request", 400, "remote private body", models.StatusError, BadRequest, ""},
+		{"unauthorized", 401, "remote private body", models.StatusError, Unauthorized, ""},
+		{"forbidden", 403, "remote private body", models.StatusError, Forbidden, ""},
 		{"not-found-is-error", 404, "remote private body", models.StatusError, UnexpectedStatus, ""},
 		{"throttled", 429, "remote private body", models.StatusError, RateLimited, ""},
 		{"server-error", 500, "remote private body", models.StatusError, Unavailable, ""},
@@ -296,5 +304,77 @@ func TestPasswordClientValidation(t *testing.T) {
 	}
 	if _, err = NewPasswordClient("", &http.Client{}); err == nil {
 		t.Fatal("missing timeout accepted")
+	}
+}
+
+func TestPasswordBodyBoundsAndCancellation(t *testing.T) {
+	for _, name := range []string{"oversized", "truncated", "body-timeout", "mid-request-cancel"} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch name {
+				case "oversized":
+					fmt.Fprint(w, strings.Repeat("0", 2*1024*1024+1))
+				case "truncated":
+					w.Header().Set("Content-Length", "100")
+					fmt.Fprint(w, publicSuffix+":1")
+				case "body-timeout":
+					w.WriteHeader(200)
+					w.(http.Flusher).Flush()
+					<-r.Context().Done()
+				case "mid-request-cancel":
+					cancel()
+					<-r.Context().Done()
+				}
+			}))
+			defer server.Close()
+			client := server.Client()
+			client.Timeout = 100 * time.Millisecond
+			source := passwordSourceForTest(t, server.URL+"/range", client)
+			want := InvalidResponse
+			if name == "truncated" {
+				want = NetworkFailure
+			}
+			if name == "body-timeout" {
+				want = Timeout
+			}
+			if name == "mid-request-cancel" {
+				want = Cancelled
+			}
+			if source.SearchPassword(ctx, security.NewSecret("password"), func(r models.Result) error {
+				if r.Status != models.StatusError || r.Metadata["error_kind"] != string(want) {
+					t.Error("wrong bounded/cancelled response")
+				}
+				return nil
+			}) == nil {
+				t.Fatal("unsafe response accepted")
+			}
+		})
+	}
+}
+func TestPasswordConsumerAndEmptyInput(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); fmt.Fprint(w, publicSuffix+":1") }))
+	defer server.Close()
+	client := server.Client()
+	client.Timeout = time.Second
+	source := passwordSourceForTest(t, server.URL+"/range", client)
+	secret := security.NewSecret("password")
+	if source.SearchPassword(context.Background(), secret, nil) == nil || !secret.Empty() || calls.Load() != 0 {
+		t.Fatal("nil consumer leaked input or made a request")
+	}
+	if source.SearchPassword(context.Background(), security.Secret{}, func(r models.Result) error {
+		if r.Status != models.StatusError {
+			t.Error("empty input accepted")
+		}
+		return nil
+	}) == nil || calls.Load() != 0 {
+		t.Fatal("empty input made a request")
+	}
+	consumerErr := errors.New("fixture consumer failure")
+	emitted := 0
+	if source.SearchPassword(context.Background(), security.NewSecret("password"), func(models.Result) error { emitted++; return consumerErr }) != consumerErr || emitted != 1 || calls.Load() != 1 {
+		t.Fatal("consumer backpressure lost")
 	}
 }

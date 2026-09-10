@@ -234,6 +234,18 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		}
 	}
 
+	if cfg.Mode == ModePassword {
+		for _, format := range cfg.OutputFormats {
+			if format != "json" && format != "csv" && format != "txt" {
+				return nil, fmt.Errorf("invalid password output format; choose json,csv,txt")
+			}
+		}
+		for _, format := range cfg.ReportFormats {
+			if format != "cli" && format != "html" && format != "docx" {
+				return nil, fmt.Errorf("invalid password report format; choose cli,html,docx")
+			}
+		}
+	}
 	return cfg, nil
 }
 

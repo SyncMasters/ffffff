@@ -402,6 +402,7 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
           </div>
           {{end}}
 
+          {{if eq .TargetType "password"}}<p><b>{{.OutcomeLabel}}</b></p>{{end}}
           {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
           {{if or .Evidence .Metadata}}<dl class="kv">
             {{range .Evidence}}<dt>{{.Kind}}</dt><dd>{{.Value}}</dd>{{end}}

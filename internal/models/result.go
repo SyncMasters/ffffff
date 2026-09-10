@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/johan-larp/agentsearch/internal/security"
@@ -74,6 +75,8 @@ func (r Result) normalized() Result {
 
 // Redacted makes a copy, including maps/slices. Known secrets must be passed by
 // the source dispatcher while it still holds input; they are never retained.
+// Consuming password sources must construct safe observations directly because
+// their plaintext is already destroyed when results reach the dispatcher.
 func (r Result) Redacted(secrets ...string) Result {
 	if r.TargetType.Sensitive() {
 		secrets = append(append([]string(nil), secrets...), r.Target)
@@ -105,4 +108,36 @@ func (r Result) Redacted(secrets ...string) Result {
 func (r Result) MarshalJSON() ([]byte, error) {
 	type plain Result
 	return json.Marshal(plain(r.Normalized()))
+}
+
+// OutcomeLabel is a human-readable interpretation; machine statuses stay stable.
+func (r Result) OutcomeLabel() string {
+	r = r.Normalized()
+	if r.TargetType == TargetPassword {
+		switch r.Status {
+		case StatusFound:
+			return "PWNED"
+		case StatusNotFound:
+			return "NOT PWNED"
+		default:
+			return "ERROR"
+		}
+	}
+	return string(r.Status)
+}
+
+// Details is the normalized semantic evidence and sorted metadata projection
+// shared by text and document outputs. It contains no request state.
+func (r Result) Details() []Evidence {
+	r = r.Normalized()
+	details := append([]Evidence(nil), r.Evidence...)
+	keys := make([]string, 0, len(r.Metadata))
+	for key := range r.Metadata {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		details = append(details, Evidence{Kind: key, Value: r.Metadata[key]})
+	}
+	return details
 }

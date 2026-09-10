@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,7 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 	// Print the terminal report.
 	printHeader(target, duration)
 	printStats(summary)
+	writeDetails(os.Stdout, results)
 	printFoundTable(results)
 	printBlockedTable(results)
 	printFooter(summary)
@@ -49,6 +51,7 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 	fmt.Fprintf(f, "Found: %d | Not Found: %d | Blocked: %d | Errors: %d\n\n",
 		summary.Found, summary.NotFound, summary.Blocked, summary.Errors)
 
+	writeDetails(f, results)
 	fmt.Fprintf(f, "FOUND RESULTS:\n")
 	fmt.Fprintf(f, "%-30s %-10s %-10s %s\n", "SOURCE", "CONF", "STATUS", "URL")
 	fmt.Fprintln(f, strings.Repeat("-", 120))
@@ -165,4 +168,17 @@ func percent(part, total int) float64 {
 		return 0
 	}
 	return float64(part) / float64(total) * 100
+}
+
+// writeDetails also represents successful no-match results and their metadata.
+func writeDetails(w io.Writer, results []models.Result) {
+	for _, result := range results {
+		if len(result.Metadata) == 0 && len(result.Evidence) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "%s | Source: %s\n", result.OutcomeLabel(), result.SiteName)
+		for _, detail := range result.Details() {
+			fmt.Fprintf(w, "  %s: %s\n", detail.Kind, detail.Value)
+		}
+	}
 }

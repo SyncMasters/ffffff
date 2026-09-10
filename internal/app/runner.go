@@ -90,13 +90,7 @@ func (a *App) searchTarget(ctx context.Context, target models.Target) error {
 }
 func (a *App) logResult(res models.Result) {
 	if res.TargetType == models.TargetPassword {
-		label := "ERROR"
-		if res.Status == models.StatusFound {
-			label = "PWNED"
-		} else if res.Status == models.StatusNotFound {
-			label = "NOT PWNED"
-		}
-		slog.Info(label, "source", res.SiteName, "method", res.Metadata["method"], "occurrences", res.Metadata["occurrences"], "error", res.Error)
+		slog.Info(res.OutcomeLabel(), "source", res.SiteName, "method", res.Metadata["method"], "occurrences", res.Metadata["occurrences"], "error", res.Error)
 		return
 	}
 	switch res.Status {

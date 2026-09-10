@@ -1,4 +1,4 @@
-// Package security provides conservative output redaction, not secret storage.
+// Package security provides output redaction and short-lived in-memory secret handles.
 package security
 
 import (

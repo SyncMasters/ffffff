@@ -17,13 +17,14 @@ import (
 const DefaultBaseURL = "https://haveibeenpwned.com/api/v3"
 const userAgent = "AgentSearch (https://github.com/johan-larp/AgentSearch)"
 
-// Client is safe for concurrent use. It does not log requests or retry failures.
-// Inject a standard, non-retrying client from network.NewServiceClient.
+// httpEndpoint holds shared, authentication-neutral transport settings.
 type httpEndpoint struct {
 	http    *http.Client
 	baseURL string
 }
 
+// Client performs authenticated email lookups. It does not log or retry.
+// Inject a standard, non-retrying client from network.NewServiceClient.
 type Client struct {
 	*httpEndpoint
 	key security.Secret

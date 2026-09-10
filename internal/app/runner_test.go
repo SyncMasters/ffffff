@@ -14,6 +14,7 @@ import (
 
 	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/security"
 	"github.com/johan-larp/agentsearch/internal/sources"
 )
 
@@ -111,5 +112,19 @@ func TestWebsiteModeDoesNotActivateHIBP(t *testing.T) {
 	}
 	if calls.Load() != 1 || len(results) != 1 || results[0].SourceType != models.SourceWebsite {
 		t.Fatal("website mode changed its providers")
+	}
+}
+
+func TestPasswordCompositionNeedsNoKeyOrServiceFile(t *testing.T) {
+	t.Setenv(config.DefaultHIBPKeyEnv, "")
+	cfg := &config.AppConfig{Mode: config.ModePassword, Password: security.NewSecret("test-password"), RequestTimeout: time.Second}
+	defer cfg.Password.Destroy()
+	// Construction only: no external lookup is performed.
+	if _, err := New(cfg); err != nil {
+		t.Fatal("default password source required email configuration")
+	}
+	cfg.ServicesFile = filepath.Join(t.TempDir(), "missing.yaml")
+	if _, err := New(cfg); err == nil || !cfg.Password.Empty() {
+		t.Fatal("initialization failure retained input")
 	}
 }

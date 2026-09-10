@@ -83,3 +83,31 @@ func TestSummaryJSONEscaping(t *testing.T) {
 		t.Fatal("summary changed", result)
 	}
 }
+
+func TestPasswordReportData(t *testing.T) {
+	for _, status := range []models.ResultStatus{models.StatusFound, models.StatusNotFound, models.StatusError} {
+		result := models.Result{Source: "pwned-passwords", SourceType: models.SourceAPI, Target: "[REDACTED]", TargetType: models.TargetPassword, Status: status, Metadata: map[string]string{"method": "sha1-k-anonymity"}}
+		if status != models.StatusError {
+			result.Metadata["pwned"] = "false"
+			result.Metadata["occurrences"] = "0"
+			if status == models.StatusFound {
+				result.Metadata["pwned"] = "true"
+				result.Metadata["occurrences"] = "42"
+			}
+		}
+		target, results := normalizeResults("[REDACTED]", []models.Result{result})
+		data, err := json.Marshal(struct {
+			Summary Summary
+			Results []models.Result
+			Details []models.Evidence
+		}{BuildSummary(target, results, time.Second), results, result.Details()})
+		if err != nil || !strings.Contains(string(data), "sha1-k-anonymity") {
+			t.Fatal("report data lost password semantics")
+		}
+		for _, input := range []string{"correct horse battery staple", "ABF7A", "AD6438836DBE526AA231ABDE2D0EEF74D42"} {
+			if strings.Contains(string(data), input) {
+				t.Fatal("password material in report data")
+			}
+		}
+	}
+}

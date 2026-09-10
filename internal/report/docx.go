@@ -51,6 +51,17 @@ func (d *DOCXReport) Generate(target string, results []models.Result, duration t
 	addBullet(doc, fmt.Sprintf("Errors: %d", summary.Errors))
 	doc.AddParagraph()
 
+	// All source-specific details, including no-match and error observations.
+	for _, result := range results {
+		if len(result.Metadata) == 0 && len(result.Evidence) == 0 {
+			continue
+		}
+		doc.AddParagraph().AddRun().AddText(result.OutcomeLabel() + " | Source: " + result.SiteName)
+		for _, detail := range result.Details() {
+			addMeta(doc, detail.Kind+":", detail.Value)
+		}
+	}
+
 	// Found results
 	if summary.Found > 0 {
 		h3 := doc.AddParagraph()

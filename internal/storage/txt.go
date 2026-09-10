@@ -31,6 +31,12 @@ func (w *TXTWriter) Write(res models.Result) error {
 
 	line := fmt.Sprintf("[%s] %s | Found: %v | Confidence: %d%% | Status: %s | URL: %s\n",
 		res.SiteName, res.Target, res.Found, res.Confidence, res.Status, res.URL)
+	if len(res.Metadata) > 0 || len(res.Evidence) > 0 {
+		line += fmt.Sprintf("  Outcome: %s\n", res.OutcomeLabel())
+		for _, detail := range res.Details() {
+			line += fmt.Sprintf("  %s: %s\n", detail.Kind, detail.Value)
+		}
+	}
 	if res.FinalURL != "" && res.FinalURL != res.URL {
 		line += fmt.Sprintf("  -> Final URL: %s\n", res.FinalURL)
 	}
