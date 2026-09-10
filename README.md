@@ -16,7 +16,8 @@ It is intended for defensive investigations, personal exposure checks, and secur
 | Implemented | Shared JSON, CSV, and TXT output; CLI and HTML reports |
 | License-dependent | DOCX reports through the existing UniOffice dependency |
 | Experimental | Website uTLS support; transport combinations have known limitations |
-| Planned | Offline Pwned Passwords database, HTTP API, AI analysis, and additional external sources |
+| Implemented | Explicit offline Pwned Passwords backend with immutable snapshots and separate corpus maintenance |
+| Planned | HTTP API, AI analysis, and additional external sources |
 
 **For password checks, use `-password-prompt`. Never put passwords in website targets, target files, email input, or service YAML.** The `-d` flag is retained for compatibility but remains a no-op stub.
 
@@ -208,7 +209,35 @@ services:
 ./agentsearch -password-prompt -services configs/services.yaml
 ```
 
-Use the official URL in production. A custom endpoint is trusted configuration and receives the prefix. HTTPS is required except literal-loopback HTTP for local tests. The path must be `/range`; credentials, query strings, and fragments are rejected. There are no default mirrors, scraping, corpus downloads, caches, or offline databases in this stage.
+Use the official URL in production. A custom endpoint is trusted configuration and receives the prefix. HTTPS is required except literal-loopback HTTP for local tests. The path must be `/range`; credentials, query strings, and fragments are rejected. There are no default mirrors, scraping, automatic corpus downloads, or query caches. Stage 4 adds the separately selected offline backend below.
+
+## Offline Pwned Passwords (Stage 4)
+
+The API remains the default for `-password-prompt` and `-password VALUE`.
+Offline lookup requires explicit selection and an operator-prepared database:
+
+```sh
+./agentsearch -password-prompt -password-backend local -password-db /srv/pwned-db
+```
+
+On Windows, use `agentsearch.exe -password-prompt -password-backend local -password-db C:\Data\Pwned`.
+The path names a managed root, not an export file. `-password-db` alone is an error.
+Local mode never downloads data or falls back to the API; unavailable or corrupt
+local data returns an error. Prompt mode prepares the snapshot before asking for input.
+
+Use the separate `agentsearch-corpus` command to import a completed, operator-owned
+SHA-1 hash/count artifact, verify it, explicitly activate it, roll back, or prune
+unreferenced/unleased generations. No corpus is bundled or committed. No password
+lists or bulk checking are supported. See the **[offline setup and operations guide](docs/offline-passwords.md)**
+for acquisition attestation, exact formats, commands, disk sizing and recovery.
+
+Local results use source `pwned-passwords-local`, type `local`, method `sha1-offline`
+and the existing redacted target/status/metadata system. Both a match and verified
+absence use confidence **100** relative to the selected supplied dataset; the
+existing remote negative confidence remains **0**. Technical errors never mean
+not pwned. Membership is not proof of account compromise, and absence is not proof
+of safety. Native Windows runtime, real-corpus compatibility and power-loss behavior
+remain operationally unverified; no legal or production-readiness certification is implied.
 
 ## CLI reference
 
@@ -236,7 +265,9 @@ Run `./agentsearch -h` for current help. Durations use Go syntax such as `250ms`
 | `-email` | unset | Single HIBP email lookup, separate from website mode |
 | `-password` | unset | One password range lookup; argument exposure warning; prefer prompt |
 | `-password-prompt` | `false` | Interactive non-echoing single-password input |
-| `-services` | `configs/services.yaml` for email | Loaded for email; optional explicit password endpoint override |
+| `-password-backend` | `api` | Explicit `api` or `local`; no automatic fallback |
+| `-password-db` | unset | Managed local database root; requires local backend |
+| `-services` | `configs/services.yaml` for email | Loaded for email; optional explicit password settings |
 
 ## Website databases and detection
 
@@ -384,7 +415,7 @@ Website/email filenames are based on the target with unsafe filename characters 
 - Redaction is a safety net, not a general detector for every possible secret representation. Do not add HTTP request dumps or place secrets into evidence. Go strings also cannot be reliably erased from memory.
 - Password input is kept in a separate shared secret handle; consuming the handle clears the application-owned byte buffer before the range request and on normal cleanup paths. Do not call `Reveal` for password dispatch or add plaintext to results. API-key callers retain explicit reusable access.
 - This is best-effort lifetime control, **not locked/secure memory**. Go runtime copies, prompt-library strings, original CLI arguments, swap, crash dumps, and host-level instrumentation cannot be guaranteed erased. Prompt mode avoids passing the password as an argument but does not secure a compromised host.
-- Password results contain a fixed redacted target and allowlisted semantic fields only. Password-hash input, offline lookups, and bulk scanning are not implemented. Protect occurrence metadata and any reports you keep.
+- Password results contain a fixed redacted target and allowlisted semantic fields only. Password-hash CLI input and bulk scanning are not implemented. Offline lookup is explicit and uses operator-owned data. Protect occurrence metadata and any reports you keep.
 
 ## Architecture
 
@@ -394,8 +425,9 @@ CLI flags
   -> Runner -> source registry / capability dispatcher
        |-- websites -> workers -> host limiter -> existing HTTP client -> detector
        |-- hibp -> authenticated email breach client -> standard service HTTP transport
-       `-- pwned-passwords -> local SHA-1 / secret consumption -> key-free range client
-                              -> local suffix match -> standard normalized result
+       `-- password backend (exactly one) -> local SHA-1 / secret consumption
+              |-- api -> key-free range client -> local suffix match
+              `-- local -> immutable corpus -> verified range -> binary search
   -> normalized, redacted results
   -> common storage and reports
 ```
@@ -412,9 +444,10 @@ go test -race ./...
 go vet ./...
 go build ./cmd/agentsearch
 go build ./cmd/convert
+go build ./cmd/agentsearch-corpus
 ```
 
-Tests use local HTTP servers, runtime-generated email mock credentials, and obvious public password fixtures, not real HIBP keys, private passwords, or external API calls. They cover HIBP response/error semantics, headers, encoding, redirect protection, cancellation, timeouts, redaction, normalized results, and CLI execution, alongside the website regression suite. Password tests additionally cover independent SHA-1 vectors, exact request prefix/suffix boundaries, padding and strict range parsing, shared-buffer destruction, prompt injection/restoration, both password flags, and output/report leakage. Only the small `golang.org/x/term` module was added for cross-platform terminal input; no crypto, database, or API framework dependency was added.
+Tests use local HTTP servers, runtime-generated email mock credentials, and obvious public password fixtures, not real HIBP keys, private passwords, or external API calls. They cover HIBP response/error semantics, headers, encoding, redirect protection, cancellation, timeouts, redaction, normalized results, and CLI execution, alongside the website regression suite. Password tests additionally cover independent SHA-1 vectors, exact request prefix/suffix boundaries, padding and strict range parsing, shared-buffer destruction, prompt injection/restoration, both password flags, and output/report leakage. Stage 3 added `golang.org/x/term` for terminal input. Stage 4 promotes the already-present `golang.org/x/sys` to a direct dependency for platform locking/space checks, without a version upgrade or new database, mmap, crypto or API framework. Synthetic offline tests protect range integrity, activation/leases, concurrency and secret/backend isolation.
 
 A repository-wide test checks Unicode Cyrillic characters in current text files, including comments, documentation, configurations, and fixtures. The maintained codebase and primary documentation are English-only. Git history and externally supplied target/database/response data are not rewritten or translated.
 
@@ -430,7 +463,7 @@ In addition to output-directory and error-propagation limitations noted above:
 - HIBP responses are bounded to 2 MiB. No pagination, local cache, email hash-range lookup, pastes, domain enumeration, or separate stealer-log API is implemented.
 - HIBP API behavior is tested against local contract fixtures, not certified against a live subscription during CI.
 
-See [ROADMAP.md](ROADMAP.md) for the next stages. Stage 3 **Pwned Passwords API integration** is implemented. Next is **Stage 4 — Offline Pwned Passwords database**. Offline storage/download/index maintenance, an HTTP API, AI analysis, and additional external sources remain planned, not implemented.
+See [ROADMAP.md](ROADMAP.md) for the next stages. Stage 3 API integration and Stage 4 offline database/maintenance are implemented. Acquisition stays external; a downloader, HTTP API, AI analysis and additional external sources are not implemented. Review current HIBP Terms before public/commercial deployment or corpus redistribution; software availability is not legal certification.
 
 ## License
 

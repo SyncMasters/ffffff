@@ -10,3 +10,6 @@ services:
     # Optional password endpoint override; no API key is read or transmitted.
     # An explicit password flag is its own opt-in, independent of email enabled.
     passwords_api_url: "https://api.pwnedpasswords.com/range"
+    # Optional managed local root; it never selects the backend automatically.
+    # Relative paths use the working directory. CLI -password-db overrides this.
+    # passwords_database_path: "./pwned-db"

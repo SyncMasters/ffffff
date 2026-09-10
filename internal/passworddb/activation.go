@@ -145,6 +145,13 @@ func Verify(ctx context.Context, root, id string) (err error) {
 	if err != nil {
 		return err
 	}
+
+	// Serialize with creation/failed-import cleanup as well as pruning.
+	update, err := lock(ctx, filepath.Join(root, "update.lock"), true, false)
+	if err != nil {
+		return err
+	}
+	defer update.Close()
 	gate, err := lock(ctx, filepath.Join(root, "control.lock"), false, true)
 	if err != nil {
 		return err

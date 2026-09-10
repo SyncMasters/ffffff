@@ -34,12 +34,21 @@ HIBP email lookup does not include Pwned Passwords, email hash-range lookup, pas
 - [x] Local contract, request-boundary, hashing, prompt, leakage, and CLI regression tests.
 - [x] Strict separation from email authentication and existing website behavior.
 
-## Stage 4 — Offline Pwned Passwords database: planned, not implemented
+## Stage 4 — Offline Pwned Passwords database: implemented
 
-- [ ] Local database lookup through the source architecture.
-- [ ] Separately reviewed storage, indexing, and database maintenance workflow.
+- [x] Canonical 28-byte records, fixed headers, 20-bit offset/SHA-256 index and strict bounded manifests.
+- [x] Immutable snapshots, bounded concurrent ReadAt, and checksum verification before either lookup outcome.
+- [x] Strict bounded prefix-group importer with explicit artifact digest/completion attestation; no built-in acquisition.
+- [x] OS updater/control locks, generation leases, redundant activation records, explicit rollback and safe pruning.
+- [x] Separate corpus maintenance command; no corpus bundled, committed or automatically downloaded.
+- [x] Consuming local password source through the existing capability/runner/results.
+- [x] Explicit API/local CLI selection with API default and no fallback; snapshot preparation before local prompting.
+- [x] Synthetic integrity, activation/concurrency, lifecycle, selection and output regressions.
 
-No corpus downloader, database, index, password cache, or batch scanner is part of Stage 3.
+Operational follow-ups: native Windows filesystem execution, actual full HIBP corpus compatibility,
+power-loss testing and production-scale validation remain **UNVERIFIED**. Completion of Stage 4
+implementation is not a production-readiness, secure-memory or legal certification.
+See the [offline operations guide](docs/offline-passwords.md). No bulk password checking is implemented.
 
 ## Later integrations — planned, not implemented
 

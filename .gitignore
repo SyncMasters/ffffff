@@ -1,0 +1,9 @@
+# Local build outputs; never package an operator-owned corpus with source.
+/agentsearch
+/agentsearch.exe
+/agentsearch-corpus
+/agentsearch-corpus.exe
+/convert
+/convert.exe
+/pwned-db/
+/corpus-staging/
