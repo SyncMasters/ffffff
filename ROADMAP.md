@@ -94,6 +94,17 @@ for official references, configuration, usage and limitations.
 No new provider, schema, confidence rule, CLI flag, password workflow or dependency was added.
 Legacy website-input compatibility and stricter HTTP input bounds remain intentional.
 
+## Stage 8 — HTTP API operational hardening: implemented
+
+- [x] Stop accepting before draining; preserve active requests until completion or grace expiry.
+- [x] Positive `-shutdown-timeout` setting, retaining the existing 10s default grace.
+- [x] Force context cancellation and connection closure on expiry; avoid unbounded command cleanup waits.
+- [x] Barrier-based shutdown and bounded-return tests; body/admission/slot-release regressions.
+
+Existing 32 KiB bodies, fail-fast bounded search admission, transport/request timeouts and safe
+HTTP errors remain. No queue, provider, target/result change, password change or dependency was added.
+Native Windows runtime, live-provider and production load verification remain outside this stage.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.

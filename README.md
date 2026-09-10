@@ -480,7 +480,8 @@ operator-supplied token. Restart to rotate it.
 | `-write-timeout` | `75s` | HTTP write limit; must exceed request timeout |
 | `-idle-timeout` | `60s` | Keep-alive idle limit |
 | `-request-timeout` | `60s` | Request-derived search deadline, including body parsing |
-| `-max-concurrent` | `8` | Admitted searches, including body reads; range 1–128 |
+| `-max-concurrent` | `8` | Admitted searches, including body reads; range 1–128; excess requests get 429 without queueing |
+| `-shutdown-timeout` | `10s` | Positive grace period for in-flight requests before forced cancellation |
 | `-s` | `configs/sites.yaml` | Trusted site database; `-s ''` disables username search |
 | `-services` | empty | Explicit services YAML; enabled email/domain providers require their environment keys |
 | `-password-backend` | `api` | Exactly one password provider: `api` or `local` |
@@ -582,9 +583,24 @@ Responses are buffered, not streamed, with a 10,000-result cap (503 on exceeding
 | 504 | Search/provider deadline exceeded |
 
 A disconnected client may receive no response. Context cancellation reaches the existing engine;
-there is no detached background search. Shutdown cancels requests and allows a 10s HTTP grace
-period before closing connections, then drains app-owned searches before closing the snapshot.
-Ordinary kernel file reads are not guaranteed context-preemptible.
+there is no detached background search. Admission remains fail-fast: no requests wait in a slot
+queue, and excess searches receive 429 with `Retry-After: 1` before their bodies are read by the
+search handler. Admitted requests release their slots on completion, errors and cancellation.
+The existing 32 KiB body limit, request/transport timeouts and error mappings are unchanged.
+
+Stage 8 separates the stop signal from active request cancellation. SIGINT/SIGTERM first stops
+accepting connections and closes idle connections; in-flight requests may finish within
+`-shutdown-timeout` (default 10s). Their own deadlines and client cancellation still apply.
+A completed drain closes app-owned resources normally. On grace expiry, the server cancels active
+request contexts, closes connections and reports a safe shutdown error; a disconnected client
+may receive no final JSON response.
+
+The server command exits nonzero after a forced/failed stop rather than waiting indefinitely on
+app cleanup behind an uncooperative search. It does not close a snapshot underneath active readers;
+remaining descriptors and leases are released by process exit. Ordinary kernel file reads and
+arbitrary Go handlers cannot be forcibly interrupted by context cancellation. When embedding the
+server rather than using the command, the owner must handle a failed drain without closing resources
+still in use. This is not a guarantee of secure-memory erasure or production load resilience.
 
 ### Deployment and privacy limits
 

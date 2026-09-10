@@ -28,7 +28,7 @@ func main() {
 func run(ctx context.Context, args []string, logger *slog.Logger) int {
 	cfg, err := config.ParseServerArgs(args)
 	if err == flag.ErrHelp {
-		fmt.Fprintln(os.Stdout, "Usage: agentsearch-server [-listen 127.0.0.1:8080] [-token-env AGENTSEARCH_API_TOKEN]\nHTTP: -read-timeout 15s -write-timeout 75s -idle-timeout 60s -request-timeout 60s -max-concurrent 8\nSources: -s configs/sites.yaml -services FILE -password-backend api|local -password-db ROOT\nWebsite/provider options: -w 10 -p FILE -ua FILE -rl 500ms -rt 15s -retries 2 -utls\nSearch requires an environment-supplied bearer token. Use TLS termination for non-loopback deployment.")
+		fmt.Fprintln(os.Stdout, "Usage: agentsearch-server [-listen 127.0.0.1:8080] [-token-env AGENTSEARCH_API_TOKEN]\nHTTP: -read-timeout 15s -write-timeout 75s -idle-timeout 60s -request-timeout 60s -max-concurrent 8 -shutdown-timeout 10s\nSources: -s configs/sites.yaml -services FILE -password-backend api|local -password-db ROOT\nWebsite/provider options: -w 10 -p FILE -ua FILE -rl 500ms -rt 15s -retries 2 -utls\nSearch requires an environment-supplied bearer token. Use TLS termination for non-loopback deployment.")
 		return 0
 	}
 	if err != nil {
@@ -46,7 +46,12 @@ func run(ctx context.Context, args []string, logger *slog.Logger) int {
 		logger.Error("search service initialization failed")
 		return 1
 	}
-	defer service.Close()
+	safeToClose := true
+	defer func() {
+		if safeToClose {
+			_ = service.Close()
+		}
+	}()
 	handler, err := httpapi.New(service, token, cfg, logger)
 	if err != nil {
 		logger.Error("server authentication configuration failed")
@@ -59,6 +64,10 @@ func run(ctx context.Context, args []string, logger *slog.Logger) int {
 	}
 	logger.Info("HTTP server listening", "address", listener.Addr().String())
 	if err = httpapi.Serve(ctx, listener, handler, cfg, logger); err != nil {
+		// A forced/failed stop may leave an uncooperative request in app.Search.
+		// Do not wait on its lifecycle lock or close its snapshot underneath it.
+		// main exits this process; the OS releases remaining descriptors/leases.
+		safeToClose = false
 		logger.Error("HTTP server stopped", "error", err)
 		return 1
 	}

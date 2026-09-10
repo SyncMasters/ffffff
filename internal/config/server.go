@@ -12,6 +12,7 @@ import (
 // ServerConfig is operator-only. No HTTP request can change these settings.
 // Engine options feed the existing App constructors without another engine.
 type ServerConfig struct {
+	ShutdownTimeout                                        time.Duration
 	Listen                                                 string
 	TokenEnv                                               string
 	ReadTimeout, WriteTimeout, IdleTimeout, RequestTimeout time.Duration
@@ -20,7 +21,7 @@ type ServerConfig struct {
 }
 
 func DefaultServerConfig() ServerConfig {
-	return ServerConfig{Listen: "127.0.0.1:8080", TokenEnv: "AGENTSEARCH_API_TOKEN", ReadTimeout: 15 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 60 * time.Second, RequestTimeout: 60 * time.Second, MaxConcurrent: 8,
+	return ServerConfig{ShutdownTimeout: 10 * time.Second, Listen: "127.0.0.1:8080", TokenEnv: "AGENTSEARCH_API_TOKEN", ReadTimeout: 15 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 60 * time.Second, RequestTimeout: 60 * time.Second, MaxConcurrent: 8,
 		Engine: AppConfig{SitesFile: "configs/sites.yaml", Workers: 10, RequestTimeout: 15 * time.Second, MaxIdleConns: 128, MaxIdleConnsPerHost: 16, RateLimitPerHost: 500 * time.Millisecond, MaxRetries: 2, PasswordBackend: PasswordBackendAPI}}
 }
 func ParseServerArgs(args []string) (ServerConfig, error) {
@@ -31,6 +32,7 @@ func ParseServerArgs(args []string) (ServerConfig, error) {
 	f.StringVar(&cfg.TokenEnv, "token-env", cfg.TokenEnv, "Environment variable containing the bearer token")
 	f.DurationVar(&cfg.ReadTimeout, "read-timeout", cfg.ReadTimeout, "HTTP read timeout")
 	f.DurationVar(&cfg.WriteTimeout, "write-timeout", cfg.WriteTimeout, "HTTP write timeout; greater than request-timeout")
+	f.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", cfg.ShutdownTimeout, "Grace period for in-flight requests before forced cancellation")
 	f.DurationVar(&cfg.IdleTimeout, "idle-timeout", cfg.IdleTimeout, "HTTP idle timeout")
 	f.DurationVar(&cfg.RequestTimeout, "request-timeout", cfg.RequestTimeout, "Search request deadline")
 	f.IntVar(&cfg.MaxConcurrent, "max-concurrent", cfg.MaxConcurrent, "Maximum admitted search requests")
@@ -72,7 +74,7 @@ func (c ServerConfig) Validate() error {
 	if e != nil || pe != nil || n < 0 || n > 65535 || !envName.MatchString(c.TokenEnv) {
 		return errors.New("invalid listen address or token environment name")
 	}
-	if c.ReadTimeout <= 0 || c.WriteTimeout <= c.RequestTimeout || c.IdleTimeout <= 0 || c.RequestTimeout <= 0 || c.MaxConcurrent < 1 || c.MaxConcurrent > 128 {
+	if c.ShutdownTimeout <= 0 || c.ReadTimeout <= 0 || c.WriteTimeout <= c.RequestTimeout || c.IdleTimeout <= 0 || c.RequestTimeout <= 0 || c.MaxConcurrent < 1 || c.MaxConcurrent > 128 {
 		return errors.New("invalid HTTP timeout or concurrency settings")
 	}
 	if c.Engine.Workers < 1 || c.Engine.Workers > 256 || c.Engine.RequestTimeout <= 0 || c.Engine.RateLimitPerHost < 0 || c.Engine.MaxRetries < 0 {
