@@ -1,938 +1,346 @@
-# 🚀 AgentSearch
+# AgentSearch
 
-> **Высокопроизводительный OSINT-инструмент на Go для поиска никнеймов и email по тысячам веб-ресурсов.**
+AgentSearch is a Go command-line tool for authorized account discovery and exposure checks. It combines configurable website profile searches with authenticated email breach lookups through [Have I Been Pwned (HIBP)](https://haveibeenpwned.com/), using a common result model and output pipeline.
 
-Репозиторий: [github.com/johan-larp/AgentSearch](https://github.com/johan-larp/AgentSearch)
+It is intended for defensive investigations, personal exposure checks, and security research where you have permission to query the target. A match is evidence to review, not proof of identity or of a currently compromised account.
 
----
+## Capabilities
 
-## Содержание
+| Status | Capability |
+| --- | --- |
+| Implemented | Website searches using native YAML/JSON, Sherlock, and Maigret site databases |
+| Implemented | HIBP email breach lookup using an API subscription key |
+| Implemented | Fixed website worker pool, cancellable host delays, request timeouts, direct-request retries, proxy rotation, and User-Agent rotation |
+| Implemented | Status, message, regex, redirect, header, and WAF detection rules |
+| Implemented | Shared JSON, CSV, and TXT output; CLI and HTML reports |
+| License-dependent | DOCX reports through the existing UniOffice dependency |
+| Experimental | Website uTLS support; transport combinations have known limitations |
+| Planned | Pwned Passwords API, offline password database, HTTP API, and AI analysis |
 
-- [Обзор](#обзор)
-- [Требования](#требования)
-- [Установка и сборка](#установка-и-сборка)
-- [Быстрый старт](#быстрый-старт)
-- [Флаги командной строки](#флаги-командной-строки)
-- [База сайтов (конфигурация)](#база-сайтов-конфигурация)
-  - [Нативный YAML-формат](#нативный-yaml-формат)
-  - [Полный справочник полей SiteConfig](#полный-справочник-полей-siteconfig)
-  - [Типы проверок (check_type)](#типы-проверок-check_type)
-  - [Совместимость со Sherlock и Maigret](#совместимость-со-sherlock-и-maigret)
-- [Движок детекции](#движок-детекции)
-  - [Порядок анализа](#порядок-анализа)
-  - [Система WAF-детекции](#система-waf-детекции)
-  - [Расчёт уверенности (confidence)](#расчёт-уверенности-confidence)
-- [Прокси](#прокси)
-- [Rate Limiting](#rate-limiting)
-- [Вывод результатов](#вывод-результатов)
-  - [JSON](#json)
-  - [CSV](#csv)
-  - [TXT](#txt)
-- [Отчёты](#отчёты)
-  - [CLI Report](#cli-report)
-  - [HTML Report](#html-report)
-  - [DOCX Report](#docx-report)
-- [Конвертация баз](#конвертация-баз)
-- [Graceful Shutdown](#graceful-shutdown)
-- [Архитектура](#архитектура)
-- [Структура проекта](#структура-проекта)
-- [Рецепты и сценарии](#рецепты-и-сценарии)
-- [Лицензия](#лицензия)
+**Password lookup is not implemented.** Do not pass passwords to any current CLI option. The `-d` flag is retained for compatibility but remains a no-op stub.
 
----
+## Installation
 
-## Обзор
+Requirements: Go 1.24 or later, and network access to the sources you query. DOCX generation additionally requires a valid UniOffice license.
 
-AgentSearch — OSINT-утилита, которая проверяет наличие профиля (или email-адреса) на сотнях и тысячах сайтов одновременно. Основные характеристики:
-
-| Возможность | Описание |
-|-------------|----------|
-| **Worker Pool** | Фиксированное число горутин-воркеров вместо хаотичного спавна. Контролируемая конкурентность без перегрузки. |
-| **Прокси** | Ротация из файла (HTTP/HTTPS/SOCKS5) или программная загрузка с ProxyScrape API. |
-| **Smart Detection** | Декларативный движок: статус-коды, подстроки, regex, редиректы, заголовки. |
-| **WAF Detection** | Автоматическое распознавание Cloudflare, DDoS-Guard, Incapsula, Sucuri — не считает их за «профиль найден». |
-| **uTLS / JA3 Spoofing** | Подделка TLS-отпечатка под реальный Chrome для обхода WAF. |
-| **Smart Retry** | Автоматический retry с exponential backoff на 429/5xx ошибках. |
-| **Rate Limiting** | Per-host задержка для минимизации 429 и банов. |
-| **Structured Logging** | `log/slog` (Go 1.21+) с человекочитаемым выводом в stderr. |
-| **Мультиформатный вывод** | JSON (потоковый, без хранения в памяти), CSV, TXT — одновременно. |
-| **Rich Reports** | Цветной CLI-вывод, интерактивный HTML и формальный DOCX. |
-| **Универсальные базы** | Нативный YAML, Sherlock `data.json`, Maigret `data.json` — без конвертации. |
-| **Graceful Shutdown** | Корректная остановка по `Ctrl+C`/`SIGTERM` — воркеры дорабатывают, результаты сохраняются. |
-| **Ротация User-Agent** | Встроенный набор + загрузка из файла. |
-
-**Зависимости:**
-- `golang.org/x/net` — для SOCKS5-прокси
-- `gopkg.in/yaml.v3` — для парсинга YAML-баз
-- `github.com/hashicorp/go-retryablehttp` — retry с backoff
-- `github.com/refraction-networking/utls` — JA3 fingerprint spoofing
-- `github.com/fatih/color` — цветной CLI-вывод
-- `github.com/olekukonko/tablewriter` — таблицы в терминале
-- `github.com/unidoc/unioffice` — генерация DOCX
-
----
-
-## Требования
-
-- [Go 1.21+](https://golang.org/dl/)
-- Доступ в интернет для проверки сайтов
-
----
-
-## Установка и сборка
-
-```bash
+```sh
 git clone https://github.com/johan-larp/AgentSearch.git
 cd AgentSearch
-
-# Основной бинарник
 go build -o agentsearch ./cmd/agentsearch
-
-# Утилита конвертации баз (опционально)
 go build -o convert ./cmd/convert
 ```
 
-После сборки:
-- `agentsearch` — основной исполняемый файл
-- `convert` — утилита слияния Sherlock + Maigret → YAML
-- `configs/sites.yaml` — база сайтов по умолчанию
+The examples below run from the repository root so relative configuration paths resolve. On Windows, build/use `agentsearch.exe` and `convert.exe` as appropriate.
 
----
+## Choose a search mode
 
-## Быстрый старт
+### Website search
 
-### Поиск одного никнейма
-
-```bash
+```sh
 ./agentsearch -u johndoe
+./agentsearch -f targets.txt -s configs/sites.yaml
+./agentsearch -u johndoe -f additional-targets.txt -w 30 -rl 1s
 ```
 
-Результаты сохраняются в `output/`:
-```
-output/
-├── johndoe.json
-├── johndoe.csv
-├── johndoe.txt
-├── johndoe_report.txt
-├── johndoe_report.html
-└── johndoe_summary.json
-```
+`-u` and `-f` keep their original behavior: they search the configured websites. If both are supplied, their targets are appended. Target files contain one value per line; blank lines and lines beginning with `#` are ignored.
 
-### Поиск с прокси и увеличенной параллельностью
+An email-like value passed through `-u` or `-f` is still substituted into website templates. It **does not** trigger HIBP, even if HIBP is enabled in the services file.
 
-```bash
-./agentsearch -u johndoe -p proxies.txt -w 100 -rl 200ms
+### HIBP email breach lookup
+
+```sh
+./agentsearch -email user@example.com
 ```
 
-### Массовый поиск по списку
+This mode registers only the HIBP source; it does not load the website database, create website workers, or query websites. It requires the configuration steps below. There is no email subcommand or batch email option in this release: use the explicit `-email` flag.
 
-Создайте `targets.txt`:
-```
-johndoe
-janedoe
-admin
-```
+## Configure HIBP
 
-```bash
-./agentsearch -f targets.txt -w 50 -o results -of json,csv
-```
+1. Obtain an appropriate subscription key from the [official HIBP API key page](https://haveibeenpwned.com/API/Key).
+2. Enable HIBP in `configs/services.yaml`:
 
-### Обход WAF через uTLS + retry
+   ```yaml
+   services:
+     hibp:
+       enabled: true
+       api_url: "https://haveibeenpwned.com/api/v3"
+       api_key_env: "HIBP_API_KEY"
+   ```
 
-```bash
-./agentsearch -u johndoe -s merged_sites.yaml -utls -retries 3 -w 50
-```
+   The supplied example is disabled by default. `api_key_env` is an environment variable **name**, never a key value. If omitted, it defaults to `HIBP_API_KEY`; an omitted `api_url` uses the official endpoint. Unknown YAML fields, including a literal `api_key` field, are rejected.
 
-### Использование Sherlock/Maigret баз напрямую
+3. Provide the key through your environment. These are placeholders, not credentials:
 
-AgentSearch умеет читать Sherlock `data.json` и Maigret `data.json` **напрямую**, без конвертации:
+   ```powershell
+   # PowerShell
+   $env:HIBP_API_KEY="YOUR_API_KEY"
+   .\agentsearch.exe -email user@example.com
+   Remove-Item Env:HIBP_API_KEY
+   ```
 
-```bash
-# Скачать свежие базы
-curl -L -o sherlock_data.json \
-  https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json
+   ```sh
+   # POSIX shell
+   export HIBP_API_KEY='YOUR_API_KEY'
+   ./agentsearch -email user@example.com
+   unset HIBP_API_KEY
+   ```
 
-curl -L -o maigret_data.json \
-  https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json
+   For real use, prefer a protected session or your existing secret-injection mechanism rather than typing a key into a recorded shell. Do not publish environment dumps, screenshots, shell history, or CI logs containing credentials. There is no API-key CLI argument and no automatic `.env` loader.
 
-# Искать сразу по базе Sherlock
-./agentsearch -u johndoe -s sherlock_data.json -w 100 -rl 300ms -tt 30m
+4. Optionally select a different services file and output options:
 
-# Или объединить обе базы в YAML
-./convert -o merged_sites.yaml sherlock_data.json maigret_data.json
-./agentsearch -u johndoe -s merged_sites.yaml -w 100 -rl 300ms -tt 30m
-```
+   ```sh
+   ./agentsearch -email user@example.com -services my-services.yaml -rt 15s -of json,csv,txt -rf cli,html -o email-results
+   ```
 
----
+The services file is loaded **only** for `-email`. Website-specific flags such as `-u`, `-f`, `-s`, `-p`, `-w`, `-rl`, `-ua`, `-utls`, and `-retries` cannot be combined with `-email`. HIBP uses a standard TLS client and an identifying AgentSearch User-Agent, not browser impersonation or proxy rotation. It does not use environment proxy settings.
 
-## Флаги командной строки
+### HIBP protocol and result semantics
 
-| Флаг | Тип | Описание | По умолчанию |
-|------|-----|----------|--------------|
-| `-u` | `string` | Целевой никнейм или email | *(обязательно, если нет `-f`)* |
-| `-f` | `string` | Путь к файлу со списком целей (одна на строку) | — |
-| `-s` | `string` | Путь к базе сайтов (YAML или JSON) | `configs/sites.yaml` |
-| `-p` | `string` | Путь к файлу со списком прокси | — |
-| `-w` | `int` | Количество конкурентных воркеров | `50` |
-| `-rl` | `duration` | Задержка между запросами к одному хосту | `500ms` |
-| `-rt` | `duration` | Таймаут одного HTTP-запроса | `15s` |
-| `-tt` | `duration` | Общий таймаут на весь поиск (per batch) | `10m` |
-| `-o` | `string` | Директория для сохранения результатов | `output` |
-| `-of` | `string` | Форматы вывода через запятую: `json`, `csv`, `txt` | `json,csv,txt` |
-| `-rf` | `string` | Форматы отчётов: `cli`, `html`, `docx` | `cli,html` |
-| `-ua` | `string` | Путь к внешнему файлу со списком User-Agent | — |
-| `-mc` | `int` | Максимальное число idle-соединений в пуле | `500` |
-| `-mch` | `int` | Максимальное число idle-соединений на хост | `100` |
-| `-utls` | `bool` | Включить uTLS JA3 fingerprint spoofing (обход WAF) | `false` |
-| `-retries` | `int` | Максимальное число retry при 429/5xx | `2` |
-| `-d` | `bool` | Включить Deep Search (dorking mode, stub) | `false` |
-
-> **Примечание:** Должен быть указан хотя бы один из `-u` или `-f`. Если указаны оба — цели суммируются.
-
-### Формат длительности (duration)
-
-Go-duration: `0s`, `100ms`, `5s`, `1m`, `30m`, `1h`. Подробнее: [pkg.go.dev/time#ParseDuration](https://pkg.go.dev/time#ParseDuration)
-
-### Примеры комбинаций
-
-```bash
-# Максимально быстрый поиск (агрессивный, много ложных срабатываний)
-./agentsearch -u johndoe -w 200 -rl 0s -mc 1000 -mch 200
-
-# Только JSON, тихий режим
-./agentsearch -u johndoe -of json -o /tmp/results
-
-# Поиск с кастомной базой и прокси
-./agentsearch -u johndoe -s my_sites.yaml -p proxies.txt -w 80 -rl 100ms
-
-# Долгий поиск по объединённой базе (3000+ сайтов)
-./agentsearch -u johndoe -s merged_sites.yaml -w 100 -tt 60m -rt 20s
-
-# Обход WAF через uTLS + retry + все форматы отчётов
-./agentsearch -u johndoe -s merged_sites.yaml -utls -retries 3 -w 50 -rf cli,html,docx
-```
-
----
-
-## База сайтов (конфигурация)
-
-### Нативный YAML-формат
-
-Файл базы — это **массив объектов** `SiteConfig`. Минимальный пример:
-
-```yaml
-- name: GitHub
-  url: https://github.com/{username}
-  check_type: status_code
-  error_code: 404
-  weight: 20
-
-- name: Instagram
-  url: https://www.instagram.com/{username}/
-  check_type: message
-  absence_strs:
-    - "Sorry, this page isn't available."
-  presence_strs:
-    - '"biography"'
-  weight: 20
-```
-
-Переменные в URL:
-- `{username}` — подставляется искомый никнейм
-- `{target}` — алиас `{username}` (для совместимости)
-
-Эти переменные также подставляются в:
-- `request_payload`
-- `headers` (значения)
-- `presence_strs` / `absence_strs` (подстроки)
-
-### Полный справочник полей SiteConfig
-
-| Поле | Тип | Обязательное | Описание |
-|------|-----|--------------|----------|
-| `name` | `string` | ✅ | Имя сайта (отображается в логах и отчётах) |
-| `url` | `string` | ✅ | URL с плейсхолдером `{username}` |
-| `url_probe` | `string` | — | Альтернативный URL для проверки (API endpoint). Если задан — используется вместо `url` |
-| `url_main` | `string` | — | Основной URL сайта (для справки, не используется в проверке) |
-| `engine` | `string` | — | Движок сайта (информационное поле, не влияет на логику) |
-| `check_type` | `string` | — | Тип проверки: `status_code`, `message`, `response_url`, `header` |
-| `error_code` | `int` | — | Код ответа, означающий отсутствие профиля (для `status_code`) |
-| `error_url` | `string` | — | Паттерн URL, означающий отсутствие (для `response_url`) |
-| `absence_strs` | `[]string` | — | Подстроки в теле ответа, означающие **отсутствие** профиля |
-| `absence_regexes` | `[]string` | — | Regex-паттерны отсутствия профиля |
-| `presence_strs` | `[]string` | — | Подстроки в теле ответа, означающие **наличие** профиля |
-| `presence_regexes` | `[]string` | — | Regex-паттерны наличия профиля |
-| `follow_redirects` | `bool` | — | Разрешить ли редиректы (по умолчанию `true`). Если `false` — останавливается на первом ответе |
-| `redirect_failure_patterns` | `[]string` | — | Паттерны в финальном URL, означающие «профиль не найден» |
-| `headers` | `map[string]string` | — | Кастомные HTTP-заголовки запроса |
-| `required_headers` | `map[string]string` | — | Заголовки ответа, которые нужно проверить (для `check_type: header`) |
-| `request_method` | `string` | — | HTTP-метод (`GET`, `POST`). По умолчанию `GET` |
-| `request_payload` | `string` | — | Тело POST-запроса |
-| `request_head_only` | `bool` | — | Отправлять HEAD вместо GET (для `status_code`) |
-| `regex_check` | `string` | — | Regex для валидации никнейма **до** отправки запроса |
-| `weight` | `int` | — | Вес сайта для расчёта confidence (1–100, по умолчанию 10) |
-| `tags` | `[]string` | — | Теги сайта (например: `coding`, `ru`, `social`) |
-| `disabled` | `bool` | — | Если `true` — сайт исключается из поиска |
-| `protection` | `[]string` | — | Список известных защит (`cf_js_challenge`, `custom_bot_protection`) |
-| `waf_indicators` | `WAFConfig` | — | Пользовательские правила WAF-детекции (см. ниже) |
-
-#### WAFConfig
-
-```yaml
-waf_indicators:
-  status_codes: [403]      # Статус-коды, означающие защиту
-  header_keys: ["CF-RAY"]  # Наличие заголовков-маркеров
-  body_substrings: ["cloudflare"]  # Подстроки в теле ответа
-```
-
-### Типы проверок (check_type)
-
-#### `status_code`
-
-Проверяет HTTP-статус ответа. Профиль **не найден**, если код совпадает с `error_code` (обычно `404`).
-
-```yaml
-- name: GitHub
-  url: https://github.com/{username}
-  check_type: status_code
-  error_code: 404
-```
-
-#### `message`
-
-Анализирует тело ответа на подстроки и regex. Приоритет:
-
-1. Если найдена `absence_strs` / `absence_regexes` → **не найден**
-2. Если найдена `presence_strs` / `presence_regexes` → **найден**
-3. Если ничего не найдено → **предположительно найден** с пониженной уверенностью (≥30%)
-
-```yaml
-- name: Twitter/X
-  url: https://x.com/{username}
-  check_type: message
-  absence_strs:
-    - "page doesn't exist"
-    - "This account doesn't exist"
-  presence_strs:
-    - '"screen_name":"{username}"'
-```
-
-#### `response_url`
-
-Проверяет финальный URL (после редиректов). Профиль **не найден**, если URL содержит `error_url`.
-
-```yaml
-- name: VK_by_id
-  url: https://vk.com/id{username}
-  check_type: response_url
-  error_url: "vk.com/blank.php"
-```
-
-> **Важно:** Для `response_url` нужно, чтобы `follow_redirects` был `true` (по умолчанию).
-
-#### `header`
-
-Проверяет наличие определённых заголовков в ответе.
-
-```yaml
-- name: SomeSite
-  url: https://example.com/api/{username}
-  check_type: header
-  required_headers:
-    X-Profile-Exists: "true"
-```
-
-#### Fallback (check_type не указан)
-
-Если тип не задан, движок использует эвристики:
-- Если `error_code` задан и совпадает → `not_found`
-- Если статус 2xx/3xx → `found` с базовой уверенностью
-- Иначе → `not_found`
-
-### Совместимость со Sherlock и Maigret
-
-AgentSearch принимает **три формата** баз данных без предварительной конвертации:
-
-| Формат | Структура | Пример |
-|--------|-----------|--------|
-| **Нативный YAML** | `[]SiteConfig` — прямой массив | `configs/sites.yaml` |
-| **Sherlock JSON** | `{ "SiteName": { "url": "...", "errorType": "..." } }` | `sherlock/data.json` |
-| **Maigret JSON** | `{ "sites": { "SiteName": { ... } } }` | `maigret/data.json` |
-
-Логика загрузки (`internal/config/loader.go`):
-1. Пробуем распарсить как прямой YAML-массив
-2. Пробуем как JSON/YAML объект с полем `sites` (map)
-3. Пробуем как JSON/YAML объект с полем `sites` (array)
-4. Пробуем как плоский Sherlock JSON (ключ = имя сайта)
-
-При парсинге Maigret/Sherlock:
-- Автоматически определяется `check_type` на основе полей (`error_code` → `status_code`, `absence_strs` → `message`, `error_url` → `response_url` и т.д.)
-- `weight` по умолчанию устанавливается в `10`
-- Записи с `disabled: true` пропускаются
-- Записи без URL (engine-only) игнорируются (пустой URL → пропуск в website source)
-
----
-
-## Движок детекции
-
-Движок (`internal/detector/detector.go`) — сердце AgentSearch. Он анализирует HTTP-ответ по декларативным правилам из `SiteConfig`.
-
-### Порядок анализа
-
-```
-1. WAF / защита
-   ├── Глобальные эвристики (CF-RAY, Server: cloudflare, 429, ddos-guard, incapsula, sucuri)
-   ├── Пользовательские waf_indicators (status_codes, header_keys, body_substrings)
-   └── Поле protection (cf_js_challenge, custom_bot_protection)
-   → Если WAF обнаружен: status = "blocked", found = false
-
-2. Редиректы
-   └── redirect_failure_patterns: если финальный URL содержит паттерн → "not_found"
-
-3. Декларативная проверка (по check_type)
-   ├── status_code
-   ├── message
-   ├── response_url
-   └── header
-
-4. Fallback (если check_type не задан)
-```
-
-### Система WAF-детекции
-
-WAF детектируется **до** основной проверки, чтобы не засчитать заглушку защиты за реальный профиль.
-
-**Глобальные эвристики** (работают для всех сайтов автоматически):
-
-| Сигнал | Условие |
-|--------|---------|
-| Cloudflare header | `CF-RAY` присутствует в заголовках |
-| Cloudflare server | Заголовок `Server` содержит `cloudflare` |
-| Cloudflare challenge | Статус `403` + тело содержит `cloudflare` или `ray id` |
-| Rate limit | Статус `429` |
-| DDoS-Guard | Тело содержит `ddos-guard` |
-| Incapsula | Тело содержит `incapsula` |
-| Sucuri | Тело содержит `sucuri` |
-
-**Пользовательские правила** (из `waf_indicators` конкретной записи):
-
-```yaml
-waf_indicators:
-  status_codes: [403]              # Любые 403 от этого сайта → считаем WAF
-  header_keys: ["CF-RAY"]          # Наличие заголовка → WAF
-  body_substrings: ["cloudflare", "cf-error"]  # Подстроки в теле → WAF
-```
-
-### Расчёт уверенности (confidence)
-
-Confidence — число от 0 до 100, отражающее «надёжность» результата.
-
-Алгоритм (`calculateBaseConfidence`):
-
-| Фактор | Баллы |
-|--------|-------|
-| `weight` сайта | По умолчанию 10, макс. зависит от конфигурации |
-| HTTP 200 | +30 |
-| Тело > 200 байт | +10 |
-| **Кап** | 100 |
-
-Для `check_type: message` без явных индикаторов: минимальная уверенность = 30%.
-
-**Интерпретация:**
-- **0%** — профиль не найден или заблокирован WAF
-- **1–30%** — низкая уверенность, возможные ложные срабатывания
-- **31–60%** — умеренная уверенность
-- **61–100%** — высокая уверенность, профиль скорее всего существует
-
----
-
-## Прокси
-
-### Формат файла
-
-Создайте `proxies.txt`:
-
-```
-# Комментарии начинаются с #
-http://123.45.67.89:8080
-https://98.76.54.32:443
-socks5://192.168.1.1:1080
-socks5h://proxy.example.com:1080
-
-# Если схема не указана — подразумевается http://
-11.22.33.44:3128
-
-# Прокси с авторизацией
-http://user:pass@proxy.example.com:3128
-```
-
-### Поддерживаемые протоколы
-
-| Протокол | Описание |
-|----------|----------|
-| `http://` | HTTP-прокси |
-| `https://` | HTTP-прокси через TLS |
-| `socks5://` | SOCKS5 с локальным DNS-резолвом |
-| `socks5h://` | SOCKS5 с DNS-резолвом на стороне прокси |
-
-### Ротация
-
-Прокси ротируются по **кольцевому алгоритму** (round-robin). Каждый запрос получает следующий прокси в списке. Реализация потокобезопасна (`atomic.Uint64`).
-
-### Режимы работы HTTP-клиента
-
-- **Без прокси** — единый `http.Transport` с агрессивным пулом соединений (быстрее)
-- **С прокси** — транспорт клонируется под каждый запрос для изоляции настроек прокси (избегаем data race). Соединения не переиспользуются между разными прокси.
-
-### Автозагрузка с ProxyScrape API
-
-Программно (из Go-кода):
-
-```go
-import "github.com/johan-larp/agentsearch/internal/network"
-
-proxies := network.FetchProxies()
-// proxies == []string{"1.2.3.4:8080", "5.6.7.8:1080", ...}
-```
-
-API: `https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text`
-
----
-
-## Rate Limiting
-
-`HostLimiter` (`internal/ratelimit/limiter.go`) обеспечивает задержку между запросами к **одному и тому же хосту**.
-
-**Принцип работы:**
-- Хранит `map[host]time.Time` — время последнего запроса к каждому хосту
-- Перед запросом проверяет: если с последнего запроса прошло меньше `rl` — ждёт разницу
-- Потокобезопасен (`sync.Mutex`)
-
-```
-HostLimiter.Wait("https://github.com/johndoe")
- → извлекает host = "github.com"
- → если последний запрос к github.com был < 500ms назад → sleep(500ms - elapsed)
-```
-
-**Рекомендации:**
-- Без прокси: `-rl 500ms` или выше
-- С прокси: `-rl 100ms-200ms` (т.к. запросы идут с разных IP)
-- `-rl 0s` — отключает лимит (для агрессивного поиска)
-
----
-
-## Вывод результатов
-
-Все три формата пишутся **одновременно** и **потоково** (результат не хранится в памяти целиком).
-
-Имя файла файла формируется из цели: `output/{target}.{format}`.
-
-Недопустимые символы в имени (`/ : * ? " < > |`) заменяются на `_`.
-
-### JSON
-
-Потоковая запись массива. Файл открывается `[`, каждый результат дописывается через запятую, в конце `]`.
-
-```json
-[
-  {"site_name":"GitHub","target":"johndoe","url":"https://github.com/johndoe","found":false,"confidence":0,"status":"not_found","duration":56200000,"error":"","final_url":""},
-  {"site_name":"Twitter/X","target":"johndoe","url":"https://x.com/johndoe","found":false,"confidence":0,"status":"blocked","duration":187000000,"error":"","final_url":""},
-  {"site_name":"Instagram","target":"johndoe","url":"https://www.instagram.com/johndoe/","found":true,"confidence":30,"status":"found","duration":164000000,"error":"","final_url":""}
-]
-```
-
-**Поля JSON:**
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `site_name` | `string` | Имя сайта |
-| `target` | `string` | Искомый никнейм/email |
-| `url` | `string` | URL, по которому выполнялся запрос |
-| `found` | `bool` | Найден ли профиль |
-| `confidence` | `int` | Уверенность (0–100) |
-| `status` | `string` | Статус: `found`, `not_found`, `blocked`, `error` |
-| `duration` | `int64` | Время запроса в наносекундах |
-| `error` | `string` | Текст ошибки (если статус `error`) |
-| `final_url` | `string` | Финальный URL после редиректов (если отличается от `url`) |
-
-### CSV
-
-Стандартный CSV с заголовком. `duration` — в миллисекундах.
-
-```csv
-site_name,target,url,found,confidence,status,duration_ms,error,final_url
-GitHub,johndoe,https://github.com/johndoe,false,0,not_found,56,,
-Twitter/X,johndoe,https://x.com/johndoe,false,0,blocked,187,,
-Instagram,johndoe,https://www.instagram.com/johndoe/,true,30,found,164,,
-```
-
-### TXT
-
-Человекочитаемый формат, одна строка на результат:
-
-```
-[GitHub] johndoe | Found: false | Confidence: 0% | Status: not_found | URL: https://github.com/johndoe
-[Twitter/X] johndoe | Found: false | Confidence: 0% | Status: blocked | URL: https://x.com/johndoe
-[Instagram] johndoe | Found: true | Confidence: 30% | Status: found | URL: https://www.instagram.com/johndoe/
-  -> Final URL: https://www.instagram.com/some_redirect/
-```
-
----
-
-## Отчёты
-
-AgentSearch генерирует отчёты после каждого поиска (флаг `-rf`). Отчёты строятся на основе **всех** результатов (found, blocked, error) и содержат агрегированную статистику.
-
-### CLI Report (`*_report.txt`)
-
-Цветной вывод в терминал с таблицей найденных профилей, статистикой и списком заблокированных сайтов:
-
-```
-╔══════════════════════════════════════════════════════════════╗
-║           AGENTSEARCH OSINT REPORT                           ║
-╚══════════════════════════════════════════════════════════════╝
-Target:    johndoe
-Duration:  2m15s
-
-Statistics:
-  Total checks:  2063
-  Found:         342 (16.6%)
-  Not Found:     1201 (58.2%)
-  Blocked:       412 (20.0%)
-  Errors:        108 (5.2%)
-
-✓ Found 342 profile(s):
-
-SITE                           CONFIDENCE   LATENCY      URL
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-GitHub                         70%          245ms        https://github.com/johndoe
-Twitter/X                      45%          189ms        https://x.com/johndoe
-...
-```
-
-Также сохраняется в `output/*_report.txt`.
-
-### HTML Report (`*_report.html`)
-
-Интерактивный отчёт в тёмной теме GitHub-style с:
-- Карточками статистики (Total / Found / Blocked / Errors)
-- Фильтруемой таблицей найденных профилей (JavaScript `filterTable`)
-- Визуальными confidence-bar
-- Секциями Blocked by WAF и Errors
-
-Открывается в браузере — можно сортировать, фильтровать и печатать в PDF.
-
-### DOCX Report (`*_report.docx`)
-
-Формальный Word-документ для передачи заказчику:
-- Заголовок и мета-информация
-- Сводка в bullet-списке
-- Найденные профили с confidence
-- Список WAF-блокировок
-- Ошибки запросов
-
-### Summary JSON (`*_summary.json`)
-
-Автоматически генерируется рядом с отчётами:
-
-```json
-{
-  "target": "johndoe",
-  "total": 2063,
-  "found": 342,
-  "not_found": 1201,
-  "blocked": 412,
-  "errors": 108,
-  "duration": "2m15s"
-}
-```
-
----
-
-## Конвертация баз
-
-### Вариант 1: Использовать базы напрямую
-
-AgentSearch читает Sherlock `data.json` и Maigret `data.json` без конвертации:
-
-```bash
-./agentsearch -u johndoe -s sherlock_data.json
-./agentsearch -u johndoe -s maigret_data.json
-```
-
-### Вариант 2: Объединить через утилиту `convert`
-
-```bash
-# Скачать базы
-curl -L -o sherlock_data.json \
-  https://raw.githubusercontent.com/sherlock-project/sherlock/master/sherlock_project/resources/data.json
-
-curl -L -o maigret_data.json \
-  https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json
-
-# Объединить в единый YAML
-./convert -o merged_sites.yaml sherlock_data.json maigret_data.json
-
-# Искать
-./agentsearch -u johndoe -s merged_sites.yaml -w 100 -rl 300ms
-```
-
-**Что делает конвертер:**
-- Заменяет `{}` → `{username}` (Sherlock)
-- Нормализует `errorMsg` (строка или массив) → `absence_strs`
-- Сливает `presenceStrs` + `presenseStrs` (Maigret опечатка)
-- Дедуплицирует по имени+URL
-- Отбрасывает записи без URL (engine-only сайты)
-
-### Вариант 3: Две базы — два запуска
-
-```bash
-./agentsearch -u johndoe -s sherlock_data.json -o results/sherlock
-./agentsearch -u johndoe -s maigret_data.json -o results/maigret
-```
-
----
-
-## Graceful Shutdown
-
-При получении `SIGINT` (Ctrl+C) или `SIGTERM`:
-
-1. Контекст отменяется (`signal.NotifyContext`)
-2. Новые задачи не подаются в пул
-3. Воркеры дорабатывают текущие запросы
-4. Результаты, уже полученные, записываются в файлы (writer'ы флашат буферы)
-5. Отчёты генерируются на основе собранных результатов
-6. Программа завершается с кодом 0
-
-```
-$ ./agentsearch -u johndoe -s merged_sites.yaml -w 100
-time=2026-07-09T17:19:40.000Z level=INFO msg="starting search" target=johndoe workers=100
-time=2026-07-09T17:19:41.000Z level=INFO msg="profile found" site=GitHub url=...
-^C
-time=2026-07-09T17:19:45.000Z level=WARN msg="shutdown signal received, exiting"
-```
-
-Результаты, полученные до `Ctrl+C`, **не теряются**.
-
----
-
-## Архитектура
+AgentSearch calls the documented REST endpoint:
 
 ```text
-CLI (-u / -f, прежние флаги)
-  ↓
-Application: зависимости и жизненный цикл → Runner: типизированный поиск
-  ↓
-Sources: реестр и диспетчеризация по возможностям
-  └─ websites → worker pool → rate limiter → network → detector / WAF
-  ↓
-Нормализованные results
-  ↓
-Общие storage / reports
+GET /api/v3/breachedaccount/{URL-encoded email}?truncateResponse=false
 ```
 
-Поиск по сайтам теперь реализован как **один источник** —
-`internal/sources/websites`. Его процессор перенесён из `app.go`; HTTP-клиент,
-детектор, настройки сайтов и пул воркеров переиспользуются, а не дублируются.
-Имя источника в реестре — `websites`, поле `source` в результате — имя конкретного
-сайта из базы. Другой провайдер может выполнять локальные операции без HTTP и воркеров.
+It sends the required `hibp-api-key` header, an identifying User-Agent, and `Accept: application/json`. It does not scrape the HIBP website, bypass authentication, or call undocumented endpoints.
 
-`Source` предоставляет имя и тип. Возможности определяются отдельными интерфейсами:
-`UsernameSearcher`, `EmailSearcher`, `PasswordSearcher`, `PasswordHashSearcher`.
-Реестр сохраняет порядок регистрации; диспетчер вызывает только поддерживаемые
-операции. Результаты передаются последовательным callback с backpressure.
-`app.NewRunner(registry).Search(ctx, target, emit)` не требует CLI или файлового вывода.
+- Surrounding address whitespace is trimmed; case and plus tags are preserved. Only a single bare email address is accepted. Display names, internal whitespace, and obviously malformed addresses are rejected before a request. This is not a deliverability check.
+- One API request returns the breach metadata. AgentSearch emits **one `found` result per breach**.
+- HTTP 404 or HTTP 200 with an empty array emits one `not_found` result. This means no breaches were returned by this endpoint, not that the address has never been exposed.
+- Authentication, rate-limit, server, network, timeout, cancellation, and invalid-response failures are represented as `error`, not `not_found`. Email mode exits nonzero on a lookup failure after writing the error result. Missing configuration or a missing key fails during initialization, before a lookup.
+- For a match, `confidence: 100` means the API returned an exact association. It is **not** a probability of account compromise and does not override `verified` or `fabricated` metadata.
+- Allowed metadata includes breach name/title, domain, breach/added/modified dates, verification/fabrication flags, and the number of breaches returned. Compromised data classes are separate evidence items. Descriptions, logos, raw bodies, and response headers are not retained.
+- The source is `hibp`, its provenance type is `api`, and its target type is `email`. The legacy `site_name` field displays `Have I Been Pwned / <breach name>` so older writers remain useful.
 
-Модель `Target` поддерживает `username`, `email`, `password`, `password_hash`.
-Пароли и хеши скрыты при форматировании/сериализации; в результат переносится только
-безопасная ссылка (`target` + `target_type`). Пакет `security` редактирует известные
-секреты, чувствительные поля и учётные данные в URL. Это дополнительная защита:
-провайдеры не должны помещать секреты в evidence, metadata, URL или ошибки.
-CLI по-прежнему принимает только прежние `-u` / `-f`; **не передавайте туда пароли**.
+Failure metadata uses `error_kind` values such as `unauthorized`, `forbidden`, `rate_limited`, `bad_request`, `service_unavailable`, `network_failure`, `timeout`, `cancelled`, or `invalid_response`, plus `http_status` where available.
 
-JSON сохраняет прежние поля и добавляет `source`, `source_type`, `target_type`,
-а при наличии — `evidence` и `metadata`. CSV сохраняет прежние девять колонок,
-TXT — прежний краткий формат: это совместимые проекции общего результата.
-HTML умеет отображать дополнительные evidence/metadata без зависимости от провайдера.
-Storage и reports не импортируют конкретные sources; network не зависит от sources.
-Models зависят только от стандартной библиотеки и небольшого пакета security.
+### Rate limits, privacy, and coverage
 
-`configs/sites.yaml` и все CLI-флаги сохранены. `configs/services.yaml` —
-**неактивный пример** будущих настроек: `config.LoadServices` только читает и проверяет
-YAML, не читает ключи из окружения и не запускает сервисы. CLI этот файл не загружает.
-HIBP, Pwned Passwords, локальная база паролей, HTTP API и AI **не реализованы**.
+HIBP limits depend on the subscription. AgentSearch does not assume a requests-per-minute limit and **does not automatically retry HIBP requests**, including 401, 403, 429, and 5xx responses. A valid `Retry-After` on 429/503 is preserved as `metadata.retry_after_seconds`; wait at least that long before another lookup. No automatic cooldown or cross-process quota coordinator is implemented.
 
----
+The complete email address is sent to the configured API endpoint. This stage does not implement HIBP's email hash-range API. The public email endpoint excludes certain records, including sensitive and retired breaches, and follows HIBP's opt-out and access policies. Unverified results are not filtered out by AgentSearch. Read the [official API documentation](https://haveibeenpwned.com/API/v3) for current coverage, subscription, and acceptable-use requirements.
 
-## Структура проекта
+A custom `api_url` is useful for local testing but receives the key and target. Treat this configuration as trusted. HTTPS is required, except for HTTP endpoints on literal loopback IP addresses used in local tests. URLs containing credentials, query strings, or fragments are rejected. Redirects are not followed, preventing the custom API-key header from being forwarded to another endpoint.
 
-```
-AgentSearch/
-├── cmd/
-│   ├── agentsearch/
-│   │   └── main.go              # Точка входа: логирование, парсинг флагов, запуск App
-│   └── convert/
-│       └── main.go              # Утилита слияния Sherlock + Maigret → YAML
-├── configs/
-│   ├── sites.yaml               # База сайтов по умолчанию (примеры)
-│   └── services.yaml            # Неактивные настройки будущих сервисов
-├── internal/
-│   ├── app/
-│   │   ├── app.go               # Создание зависимостей и регистрация sources
-│   │   └── runner.go            # Типизированный поиск и CLI lifecycle
-│   ├── config/
-│   │   ├── config.go            # ParseFlags(), AppConfig
-│   │   ├── loader.go            # LoadSites() — загрузка YAML/JSON/Sherlock/Maigret
-│   │   ├── convert.go           # MergeAndConvert() — логика слияния баз
-│   │   └── services.go          # Независимая загрузка настроек сервисов
-│   ├── detector/
-│   │   └── detector.go          # Engine, Analyze(), WAF-детекция, confidence
-│   ├── models/
-│   │   ├── site.go              # SiteConfig, WAFConfig
-│   │   ├── target.go            # Target, TargetType
-│   │   ├── result.go            # Общий Result и совместимые поля
-│   │   └── source.go            # SourceType, Evidence
-│   ├── security/
-│   │   └── redact.go            # Secret и редактирование чувствительных данных
-│   ├── sources/
-│   │   ├── source.go            # Интерфейсы возможностей
-│   │   ├── registry.go          # Регистрация и поиск источников
-│   │   ├── manager.go           # Диспетчеризация и нормализация
-│   │   └── websites/
-│   │       ├── source.go        # Адаптер существующего движка
-│   │       └── processor.go     # Обработка сайта через network и detector
-│   ├── network/
-│   │   ├── client.go            # HTTP-клиент, proxyRotatorTransport, retryable client
-│   │   ├── utls.go              # uTLS JA3 fingerprint spoofing
-│   │   ├── retry.go             # go-retryablehttp wrapper
-│   │   ├── proxy.go             # ProxyRotator, FetchProxies()
-│   │   └── ua.go                # UARotator (встроенный + из файла)
-│   ├── ratelimit/
-│   │   └── limiter.go           # HostLimiter (per-host delay)
-│   ├── report/
-│   │   ├── report.go            # BuildSummary(), WriteAll()
-│   │   ├── cli.go               # Цветной CLI-отчёт
-│   │   ├── html.go              # Интерактивный HTML-отчёт
-│   │   └── docx.go              # Word/DOCX-отчёт
-│   ├── storage/
-│   │   ├── manager.go           # Manager — мультиформатная запись
-│   │   ├── json.go              # JSONWriter (потоковый)
-│   │   ├── csv.go               # CSVWriter
-│   │   └── txt.go               # TXTWriter
-│   └── worker/
-│       └── pool.go              # Pool, Job, Processor interface
-├── go.mod
-├── go.sum
-├── LICENSE
-├── proxies.txt                  # Пример/заготовка для прокси
-└── README.md
-```
+HIBP breach data is attributed to **[Have I Been Pwned](https://haveibeenpwned.com/)** and is subject to its [Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/). Results link to HIBP and retain its name. Keep that attribution when sharing derived reports. Pwned Passwords is a separate planned integration, not part of this email lookup.
 
----
+## CLI reference
 
-## Рецепты и сценарии
+Run `./agentsearch -h` for current help. Durations use Go syntax such as `250ms`, `15s`, or `10m`.
 
-### Сценарий 1: Быстрый единичный поиск
+| Flag | Default | Purpose / scope |
+| --- | --- | --- |
+| `-u` | unset | One website-search target |
+| `-f` | unset | File of website-search targets |
+| `-s` | `configs/sites.yaml` | Website database |
+| `-p` | unset | Website proxy list |
+| `-w` | `50` | Website worker count; must be positive |
+| `-rl` | `500ms` | Website per-host delay; `0s` disables waiting |
+| `-rt` | `15s` | HTTP request timeout; positive in email mode |
+| `-tt` | `10m` | Deadline across the entire run, not per target |
+| `-o` | `output` | Result directory; see the report-directory limitation below |
+| `-of` | `json,csv,txt` | Comma-separated output formats |
+| `-rf` | `cli,html` | Comma-separated report formats: `cli,html,docx`; empty disables reports |
+| `-ua` | unset | Extra website User-Agent values, one per line |
+| `-mc` | `500` | Website idle connection pool limit |
+| `-mch` | `100` | Website per-host connection limit |
+| `-utls` | `false` | Experimental website TLS fingerprint support |
+| `-retries` | `2` | Website retry limit; see existing retry limitations below |
+| `-d` | `false` | Retained website deep-search stub; no implemented action |
+| `-email` | unset | Single HIBP email lookup, separate from website mode |
+| `-services` | `configs/services.yaml` | Service settings; valid only with `-email` |
 
-```bash
-./agentsearch -u johndoe -w 100 -rl 100ms
-```
+## Website databases and detection
 
-50–100 воркеров, 100ms rate limit. Результат за ~10–30 секунд по ~500 сайтам.
+### Native configuration
 
-### Сценарий 2: Точный поиск с минимизацией ложных срабатываний
-
-```bash
-./agentsearch -u johndoe -w 30 -rl 1000ms -rt 20s -tt 30m
-```
-
-Меньше воркеров, большая задержка между запросами, увеличенные таймауты.
-
-### Сценарий 3: Массовый поиск по email-адресам
-
-Создайте `emails.txt`:
-```
-user1@gmail.com
-user2@protonmail.com
-```
-
-```bash
-./agentsearch -f emails.txt -w 50 -o email_results -of json,csv
-```
-
-### Сценарий 4: Поиск с прокси и обходом WAF
-
-```bash
-./agentsearch -u johndoe -p proxies.txt -w 80 -rl 150ms -utls -retries 3
-```
-
-### Сценарий 5: Добавление собственного сайта
-
-Добавьте в `configs/sites.yaml`:
+`configs/sites.yaml` contains 20 example sites, not a comprehensive or continuously verified database. Native databases use an array of `SiteConfig` records:
 
 ```yaml
-- name: MyCustomForum
-  url: https://forum.example.com/profile/{username}
+- name: ExampleForum
+  url: https://forum.example.com/users/{username}
   check_type: message
   absence_strs:
     - "User not found"
-    - "Profile doesn't exist"
-  presence_strs:
-    - "Member since"
+  presence_regexes:
+    - "Member since [0-9]{4}"
   weight: 15
-  tags:
-    - forum
+  tags: [forum]
+  waf_indicators:
+    status_codes: [403]
+    body_substrings: ["verification required"]
 ```
 
-### Сценарий 6: Поиск на сайте с POST-запросом
+The same native array can be written as JSON. The loader also supports native JSON maps and wrapped JSON site collections.
 
-```yaml
-- name: APISite
-  url: https://api.example.com/check
-  request_method: POST
-  request_payload: '{"username":"{username}"}'
-  headers:
-    Content-Type: "application/json"
-    Authorization: "Bearer token123"
-  check_type: message
-  presence_strs:
-    - '"exists":true'
-  weight: 20
+| Fields | Interpretation |
+| --- | --- |
+| `name`, `url` | Display name and target URL; entries without a URL are skipped |
+| `url_probe` | Alternate check endpoint; takes precedence over `url` |
+| `request_method`, `request_payload` | HTTP method and optional payload; default method is GET |
+| `request_head_only` | Changes GET to HEAD |
+| `headers` | Custom request headers; never put secrets in committed configuration |
+| `check_type` | `status_code`, `message`, `response_url`, or `header` |
+| `error_code` | Status indicating absence |
+| `absence_strs`, `absence_regexes` | Body absence indicators; checked before presence indicators |
+| `presence_strs`, `presence_regexes` | Body presence indicators |
+| `error_url`, `redirect_failure_patterns` | Final-URL absence patterns |
+| `follow_redirects` | Redirect policy; the native bool defaults to false, with a known retry-wrapper interaction |
+| `required_headers` | Expected response headers; the existing detector accepts any matching pair |
+| `waf_indicators` | `status_codes`, `header_keys`, and `body_substrings` |
+| `protection` | Explicit protection markers used by the detector |
+| `disabled` | Excludes the site from execution |
+| `weight` | Base confidence contribution |
+| `tags` | Retained site categories |
+| `regex_check` | Retained username pattern; not currently enforced |
+| `url_main`, `engine`, `username_claimed`, `username_unclaimed`, `alexa_rank`, `source` | Reference/conversion metadata; no full upstream engine emulation |
+
+`{username}` and `{target}` are substituted in URLs and request payloads. Header values substitute `{username}` only. Detection strings and regular expressions are currently used literally, without target-template expansion. The processor limits response bodies to 128 KiB.
+
+WAF/protection rules run first, followed by redirect failure patterns and the selected check type. Existing heuristics flag Cloudflare headers, HTTP 429, and known protection-page strings. Broad heuristics can yield false positives. Message checks without a clear presence/absence indicator can still produce a low-confidence match. Review results rather than treating `found` as a certainty.
+
+### Sherlock and Maigret
+
+```sh
+./agentsearch -u johndoe -s sherlock_data.json
+./agentsearch -u johndoe -s maigret_data.json
+./convert -o merged_sites.yaml sherlock_data.json maigret_data.json
+./agentsearch -u johndoe -s merged_sites.yaml
 ```
 
-### Сценарий 7: Только JSON-вывод в конкретную директорию
+The existing converters translate external field names, normalize Sherlock `{}` placeholders, support scalar/array `errorMsg`, merge Maigret `presenceStrs` and its legacy `presenseStrs` spelling, and preserve supported request settings. Disabled records are excluded. The conversion command merges databases and distinguishes conflicting names with different URLs.
 
-```bash
-./agentsearch -u johndoe -of json -o /tmp/osint_results
+Compatibility covers the mapped site schema, not every upstream feature: engine inheritance and some engine-specific URL placeholders are not fully supported. Native fields explicitly present in external records override converted aliases.
+
+## Website networking
+
+### Proxies
+
+Use only proxies you control or trust:
+
+```sh
+./agentsearch -u johndoe -p proxies.txt -w 30 -rl 1s
 ```
 
-### Сценарий 8: Полный набор отчётов для заказчика
+Supported input schemes are HTTP, HTTPS, SOCKS5, and SOCKS5h; an omitted scheme defaults to HTTP. Blank lines and comments are ignored. Example syntax:
 
-```bash
-./agentsearch -u johndoe -s merged_sites.yaml -w 100 -rf cli,html,docx -o client_report
+```text
+http://proxy.example.com:3128
+https://proxy.example.com:443
+socks5://proxy.example.com:1080
+socks5h://proxy.example.com:1080
+http://USER:PASSWORD@proxy.example.com:3128
 ```
 
-### Тонкая настройка производительности
+The last line illustrates placeholders only. Keep credential-bearing proxy files outside version control and restrict their permissions. Rotation is round-robin. The existing proxy transport clones its transport per request; it does not share the direct retry path. A legacy programmatic ProxyScrape helper exists but is not automatically called by the CLI.
 
-| Параметр | Эффект | Рекомендация |
-|----------|--------|--------------|
-| `-w 20` | Мало воркеров, медленно, но безопасно | Для чувствительных целей |
-| `-w 200` | Много воркеров, быстро, но риск банов | С прокси |
-| `-rl 0s` | Без задержек | Максимальная скорость, много 429 |
-| `-rl 2s` | 2 секунды между запросами к хосту | Мягкий режим |
-| `-mc 1000` | Большой пул соединений | Для `-w 200+` |
-| `-mch 200` | Больше соединений на хост | Если много запросов к одному домену |
-| `-rt 30s` | Долгий таймаут запроса | Для медленных сайтов |
-| `-tt 60m` | Долгий общий таймаут | Для 3000+ сайтов |
-| `-utls` | JA3 spoofing | Обход Cloudflare TLS fingerprinting |
-| `-retries 3` | 3 retry при ошибках | Для нестабильных прокси/сайтов |
+### Limits, retries, and cancellation
 
----
+- Website workers apply the per-host delay before a check. Pending waits and submissions are cancellable.
+- Direct website requests use the existing retryablehttp policy for eligible 429, 5xx, and network failures. There are no retries for invalid HIBP credentials because HIBP does not use this wrapper.
+- The legacy website retry function treats a nonpositive `-retries` value as the default of two, not as “disable retries.”
+- SIGINT/SIGTERM cancels active work. Already-delivered results are retained and streaming JSON is closed. Some in-flight website results may be discarded during cancellation.
+- The legacy website CLI can log a target failure without a failing final exit code. Email-mode lookup failures return nonzero. Do not rely solely on the legacy website exit status when validating a report.
 
-## Лицензия
+## Outputs and reports
 
-MIT License. См. [LICENSE](https://github.com/johan-larp/AgentSearch/blob/main/LICENSE).
+All sources use the same `models.Result` and common writers. No HIBP-specific serializer or report generator is required.
 
----
+- **JSON:** the full normalized result array. Existing fields (`site_name`, `target`, `url`, `found`, `confidence`, `status`, `duration`, `error`, `final_url`) remain, alongside `source`, `source_type`, `target_type`, `evidence`, and `metadata`. Duration is in nanoseconds; optional fields may be absent.
+- **CSV:** the original nine-column projection; duration is in milliseconds:
 
-> **Дисклеймер:** Данный инструмент предназначен исключительно для образовательных и исследовательских целей. Пользователь несёт ответственность за соблюдение законодательства и правил использования веб-сервисов при применении AgentSearch.
+  ```text
+  site_name,target,url,found,confidence,status,duration_ms,error,final_url
+  ```
+
+- **TXT:** compact per-result lines, including status and source display name. CSV and TXT do not include all structured metadata; use JSON for complete breach detail.
+- **CLI:** an English terminal summary and plain-text report.
+- **HTML:** self-contained report with filters, status cards, evidence, and metadata. Remote text is escaped rather than interpreted as HTML.
+- **DOCX:** retained Word report generation, subject to UniOffice licensing. The license-dependent test skips explicitly if the license is unavailable.
+- **Summary JSON:** counts of emitted results, generated when report formats are requested. With HIBP, two returned breaches count as two found results, not two HTTP requests.
+
+For example, a HIBP match includes:
+
+```json
+{
+  "source": "hibp",
+  "source_type": "api",
+  "target": "user@example.com",
+  "target_type": "email",
+  "site_name": "Have I Been Pwned / ExampleBreach",
+  "url": "https://haveibeenpwned.com/",
+  "status": "found",
+  "found": true,
+  "confidence": 100,
+  "duration": 120000000,
+  "metadata": {
+    "breach_name": "ExampleBreach",
+    "verified": "true",
+    "fabricated": "false",
+    "breach_count": "1"
+  },
+  "evidence": [
+    {"kind": "compromised_data_class", "value": "Email addresses"}
+  ]
+}
+```
+
+Filenames are based on the target with unsafe filename characters replaced. **Known limitation:** result files and summary JSON honor `-o`, but CLI/HTML/DOCX generators still write into `output/`. Runs using the same target can overwrite previous output; use separate working/output directories when preserving investigations. Existing output/report managers log some write failures rather than propagating them to the process exit status.
+
+## Security considerations
+
+- Query only targets you are authorized to investigate. Respect applicable law, source terms, and HIBP's acceptable-use policy.
+- Email addresses and breach associations are personal information. They appear in local output and filenames. Protect and retain that output appropriately; it is not encrypted by AgentSearch.
+- Only environment variable names belong in service YAML. Never commit keys or credential-bearing proxy files.
+- `security.Secret`, sensitive-key filtering, known-secret redaction, and URL-userinfo redaction protect normal diagnostic and result paths. HIBP errors contain safe classifications, not raw transport errors, bodies, or headers. The HIBP client does not log requests or responses.
+- Redaction is a safety net, not a general detector for every possible secret representation. Do not add HTTP request dumps or place secrets into evidence. Go strings also cannot be reliably erased from memory.
+- The typed model has password/password-hash categories for future integrations, with redacted formatting. There is currently no password command or lookup implementation.
+
+## Architecture
+
+```text
+CLI flags
+  -> application composition and target parsing
+  -> Runner -> source registry / capability dispatcher
+       |-- websites -> workers -> host limiter -> existing HTTP client -> detector
+       `-- hibp -> email breach client -> standard service HTTP transport
+  -> normalized, redacted results
+  -> common storage and reports
+```
+
+The website source supports username and legacy email-template searches. HIBP implements only `EmailSearcher`. Source registration is mode-specific, preventing accidental HIBP calls from legacy commands. Sources own their concurrency; one email request does not create a worker pool.
+
+`app.NewRunner(registry).Search(ctx, target, emit)` is the source-neutral execution boundary. The dispatcher derives capabilities from small interfaces. It preserves partial results, stops on consumer errors, and does not import storage or reports. Models depend only on the standard library and the small security package. The network layer does not depend on concrete sources. HTTP clients and secrets are supplied at the application composition boundary.
+
+## Development and verification
+
+```sh
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./cmd/agentsearch
+go build ./cmd/convert
+```
+
+Tests use local HTTP servers and runtime-generated mock credentials, not real HIBP keys or external API calls. They cover HIBP response/error semantics, headers, encoding, redirect protection, cancellation, timeouts, redaction, normalized results, and CLI execution, alongside the website regression suite.
+
+A repository-wide test checks Unicode Cyrillic characters in current text files, including comments, documentation, configurations, and fixtures. The maintained codebase and primary documentation are English-only. Git history and externally supplied target/database/response data are not rewritten or translated.
+
+### Remaining limitations
+
+In addition to output-directory and error-propagation limitations noted above:
+
+- Website proxy/retry and retry/redirect composition needs further testing and hardening.
+- Experimental uTLS has unresolved server-name and transport-composition concerns; its presence is not a guarantee of successful TLS connections or WAF access.
+- The website processor retains explicit compressed-response headers without explicit gzip/deflate/Brotli decoding.
+- The host limiter still holds a shared mutex while waiting, which can serialize different hosts.
+- Reports retain results in memory; summary tag/latency aggregation remains limited.
+- HIBP responses are bounded to 2 MiB. No pagination, local cache, email hash-range lookup, pastes, domain enumeration, or separate stealer-log API is implemented.
+- HIBP API behavior is tested against local contract fixtures, not certified against a live subscription during CI.
+
+See [ROADMAP.md](ROADMAP.md) for the next stages. Stage 3 is **Pwned Passwords API integration**, followed by separately scoped work on offline lookups, an HTTP API, and optional analysis. None of those planned features is implemented here.
+
+## License
+
+AgentSearch is licensed under the [MIT License](LICENSE). Dependencies and external data retain their own license and service requirements, including HIBP attribution and UniOffice licensing.
