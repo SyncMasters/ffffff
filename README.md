@@ -439,6 +439,40 @@ The website source supports username and legacy email-template searches. HIBP ha
 
 `app.NewRunner(registry).Search(ctx, target, emit)` is the source-neutral execution boundary. The dispatcher derives capabilities from small interfaces. It preserves partial results, stops on consumer errors, and does not import storage or reports. Models depend only on the standard library and the small security package. The network layer does not depend on concrete sources. HTTP clients and secrets are supplied at the application composition boundary.
 
+### Source orchestration
+
+Selection uses the existing insertion-ordered registry snapshot and capability interfaces.
+Current CLI/HTTP composition still selects one provider per typed search; those calls remain
+synchronous. An embedding caller registering multiple independent non-sensitive sources gets
+fixed batches of at most **two** source invocations. This is separate from HTTP admission and
+website workers, with no configurable scheduler or task queue. Password/password-hash searches
+remain synchronous on the existing shared-Secret path; no password backend is added or combined.
+
+The consumer is called serially, in registry order and then each provider's emission order,
+regardless of cross-source completion order. Unbuffered result delivery and acknowledgement
+retain streaming backpressure without collecting unbounded per-source result lists. A later
+source can wait behind an earlier source; the next pair starts only after the current pair is
+joined. This does not impose a new order inside providers: website observations still follow
+existing worker completion order. It is deterministic cross-source aggregation, not a promise
+of identical network observations or canonical within-website ordering across runs.
+
+Independent source failures do not cancel siblings or erase accepted results; sanitized errors
+are joined in registry order. Empty streams are not evidence of absence. Parent cancellation or
+deadline stops further dispatch; consumer failure stops delivery and cancels active work. Every
+launched invocation is joined before returning. Providers must cooperate with context and finish
+their own work; arbitrary blocking code cannot be forcibly stopped. Panics in source-invocation
+goroutines cancel active work and are re-panicked on the caller after joining (first in registry
+order if several panic), preserving the existing Runner/HTTP panic boundary, not creating fake
+provider errors. This does not recover panics in a provider's own internal goroutines.
+
+All existing normalized fields/evidence and writer schemas remain intact. **No deduplication**
+is performed: there is no stable observation ID, and equal URLs/targets are insufficient to
+merge source evidence safely. Even identical emitted rows are retained. Stage 9 source summaries
+remain per invocation, and the aggregate summary consumes ordered rows serially. Timing includes
+ordered-delivery/backpressure waits; source log lines may interleave, but keep their safe identity
+and generated HTTP request ID. Barrier tests verify overlap and joining, not improved throughput;
+no benchmark, production-load or live-provider performance claim is made.
+
 Stage 7 preserves standard cancellation/deadline identity through the dispatcher without retaining
 raw provider error chains. A provider-local timeout remains a timeout even when the outer request
 is still active: HTTP returns 504 (or 408 for cancellation), including when no error-metadata row

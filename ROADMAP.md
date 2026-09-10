@@ -116,6 +116,19 @@ No public schema, result/report contents, provider behavior, CLI flags or Stage 
 policy changed. No telemetry dependency, metrics endpoint or production monitoring claim is added.
 Live providers, native Windows runtime and production load remain unverified.
 
+## Stage 10 — Search orchestration and result aggregation: implemented
+
+- [x] Preserve deterministic registry selection and synchronous single-source/sensitive paths.
+- [x] Multi-source non-sensitive invocations in bounded pairs, with ordered streaming backpressure.
+- [x] Join launched work on cancellation, consumer stop and caller-side panic propagation.
+- [x] Preserve partial observations and registry-ordered failures; no guessed deduplication.
+- [x] Barrier-based concurrency/cleanup, context, evidence and CLI/HTTP regression tests.
+
+No provider, model/schema, credential, password, writer or HTTP-policy change. Existing website
+emission order is retained; this stage makes cross-source aggregation deterministic, not website
+worker completion order. Standard composition remains single-source. No throughput claim or live
+provider/native Windows runtime verification is inferred from local tests and cross-builds.
+
 ## Later integrations — planned, not implemented
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.

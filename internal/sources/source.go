@@ -9,6 +9,8 @@ import (
 )
 
 // Source names are stable registry identifiers. Type describes provenance.
+// Non-sensitive sources in one registry must be independent: invocations may
+// overlap. Sources own their internal work and must finish it before returning.
 type Source interface {
 	Name() string
 	Type() models.SourceType
