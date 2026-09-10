@@ -1,0 +1,8 @@
+# Reserved for future service integrations. Not loaded by the legacy CLI.
+# Loading this file does not activate services or read credentials.
+# Only an environment variable NAME belongs here, never a key value.
+services:
+  hibp:
+    enabled: false
+    api_url: "https://haveibeenpwned.com/api/v3"
+    api_key_env: "HIBP_API_KEY"

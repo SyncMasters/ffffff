@@ -30,6 +30,13 @@ func LoadSites(path string) ([]models.SiteConfig, error) {
 		return filterEnabled(direct), nil
 	}
 
+	// Reuse the existing converters when external camelCase fields are present.
+	// Previously direct loading decoded into SiteConfig, silently losing those
+	// fields and leaving Sherlock's {} placeholders unchanged.
+	if sites, ok, err := loadExternalJSON(data); ok {
+		return sites, err
+	}
+
 	// Попытка 2: объект — определяем, есть ли поле sites
 	var hasSites struct {
 		Sites json.RawMessage `json:"sites" yaml:"sites"`
@@ -105,4 +112,79 @@ func convertMapToSlice(m map[string]models.SiteConfig) []models.SiteConfig {
 		out = append(out, s)
 	}
 	return out
+}
+
+// loadExternalJSON recognizes real Sherlock/Maigret maps without changing the
+// native array or map paths. Explicit native keys override converted aliases.
+func loadExternalJSON(data []byte) ([]models.SiteConfig, bool, error) {
+	var root map[string]json.RawMessage
+	if json.Unmarshal(data, &root) != nil {
+		return nil, false, nil
+	}
+	entries := root
+	maigret := false
+	if raw, ok := root["sites"]; ok {
+		if json.Unmarshal(raw, &entries) != nil {
+			return nil, false, nil
+		}
+		maigret = true
+	}
+	external := false
+	for name, raw := range entries {
+		if name == "$schema" {
+			continue
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			continue
+		}
+		for _, key := range []string{"errorType", "errorMsg", "checkType", "absenceStrs", "presenceStrs", "presenseStrs", "urlMain", "urlProbe", "requestMethod", "requestPayload"} {
+			if _, ok := fields[key]; ok {
+				external = true
+			}
+		}
+	}
+	if !external {
+		return nil, false, nil
+	}
+	var converted map[string]models.SiteConfig
+	var err error
+	if maigret {
+		converted, err = parseMaigret(root["sites"])
+	} else {
+		converted, err = parseSherlock(data)
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	for name, site := range converted {
+		// Only native JSON fields are overlaid, leaving converted camelCase aliases.
+		b, _ := json.Marshal(site)
+		var normalized, native map[string]json.RawMessage
+		_ = json.Unmarshal(b, &normalized)
+		_ = json.Unmarshal(entries[name], &native)
+		for key, value := range native {
+			if _, ok := normalized[key]; ok {
+				normalized[key] = value
+			}
+		}
+		// omitempty means absent fields need recognition independently of values.
+		var direct models.SiteConfig
+		if json.Unmarshal(entries[name], &direct) == nil {
+			directJSON, _ := json.Marshal(direct)
+			var explicit map[string]json.RawMessage
+			_ = json.Unmarshal(directJSON, &explicit)
+			for key := range explicit {
+				if value, ok := native[key]; ok {
+					normalized[key] = value
+				}
+			}
+		}
+		b, _ = json.Marshal(normalized)
+		_ = json.Unmarshal(b, &site)
+		site.URL = normalizeURL(site.URL)
+		site.URLProbe = normalizeURL(site.URLProbe)
+		converted[name] = site
+	}
+	return convertMapToSlice(converted), true, nil
 }
