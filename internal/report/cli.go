@@ -50,7 +50,7 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 
 	fmt.Fprintf(f, "FOUND PROFILES:\n")
 	fmt.Fprintf(f, "%-30s %-10s %-10s %s\n", "SITE", "CONF", "STATUS", "URL")
-	fmt.Fprintf(f, strings.Repeat("-", 120)+"\n")
+	fmt.Fprintln(f, strings.Repeat("-", 120))
 	for _, r := range results {
 		if r.Status == models.StatusFound {
 			fmt.Fprintf(f, "%-30s %-10d %-10s %s\n", r.SiteName, r.Confidence, r.Status, r.URL)
