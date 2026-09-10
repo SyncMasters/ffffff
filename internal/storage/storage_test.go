@@ -3,11 +3,12 @@ package storage
 import (
 	"encoding/csv"
 	"encoding/json"
-	"github.com/johan-larp/agentsearch/internal/models"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/johan-larp/agentsearch/internal/models"
 )
 
 func TestCommonWriters(t *testing.T) {

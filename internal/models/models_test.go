@@ -3,10 +3,11 @@ package models
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/johan-larp/agentsearch/internal/security"
-	"gopkg.in/yaml.v3"
 	"strings"
 	"testing"
+
+	"github.com/johan-larp/agentsearch/internal/security"
+	"gopkg.in/yaml.v3"
 )
 
 func TestTargets(t *testing.T) {

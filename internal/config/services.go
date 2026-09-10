@@ -3,10 +3,11 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"regexp"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ServicesConfig is an opt-in configuration layer. Loading it neither registers

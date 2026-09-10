@@ -3,12 +3,13 @@ package report
 import (
 	"archive/zip"
 	"encoding/json"
-	"github.com/johan-larp/agentsearch/internal/models"
 	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/johan-larp/agentsearch/internal/models"
 )
 
 func TestGenericReports(t *testing.T) {

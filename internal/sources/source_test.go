@@ -3,10 +3,11 @@ package sources
 import (
 	"context"
 	"errors"
-	"github.com/johan-larp/agentsearch/internal/models"
-	"github.com/johan-larp/agentsearch/internal/security"
 	"strings"
 	"testing"
+
+	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/security"
 )
 
 type usernameSource struct {

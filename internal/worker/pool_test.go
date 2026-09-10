@@ -2,9 +2,10 @@ package worker
 
 import (
 	"context"
-	"github.com/johan-larp/agentsearch/internal/models"
 	"testing"
 	"time"
+
+	"github.com/johan-larp/agentsearch/internal/models"
 )
 
 type processor struct{}

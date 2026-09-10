@@ -4,14 +4,15 @@ package websites
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http"
+
 	"github.com/johan-larp/agentsearch/internal/detector"
 	"github.com/johan-larp/agentsearch/internal/models"
 	"github.com/johan-larp/agentsearch/internal/network"
 	"github.com/johan-larp/agentsearch/internal/ratelimit"
 	"github.com/johan-larp/agentsearch/internal/sources"
 	"github.com/johan-larp/agentsearch/internal/worker"
-	"log/slog"
-	"net/http"
 )
 
 type Source struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/johan-larp/agentsearch/internal/models"
 	"github.com/johan-larp/agentsearch/internal/security"
 )

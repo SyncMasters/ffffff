@@ -2,8 +2,9 @@ package models
 
 import (
 	"encoding/json"
-	"github.com/johan-larp/agentsearch/internal/security"
 	"time"
+
+	"github.com/johan-larp/agentsearch/internal/security"
 )
 
 // ResultStatus описывает итоговое состояние проверки сайта.
@@ -16,7 +17,8 @@ const (
 	StatusError    ResultStatus = "error"
 )
 
-// Result — единая структура результата проверки одного сайта.
+// Result is a normalized observation from any source. Legacy fields remain for
+// existing writers and callers; sensitive input is never a result payload.
 type Result struct {
 	// Source identifies the producing provider; SiteName is a legacy display alias.
 	Source     string     `json:"source,omitempty"`

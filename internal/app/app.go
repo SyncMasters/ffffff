@@ -3,12 +3,13 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
+
 	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/network"
 	"github.com/johan-larp/agentsearch/internal/ratelimit"
 	"github.com/johan-larp/agentsearch/internal/sources"
 	"github.com/johan-larp/agentsearch/internal/sources/websites"
-	"log/slog"
 )
 
 type App struct {

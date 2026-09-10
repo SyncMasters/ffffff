@@ -2,13 +2,14 @@ package websites
 
 import (
 	"context"
-	"github.com/johan-larp/agentsearch/internal/models"
-	"github.com/johan-larp/agentsearch/internal/security"
-	"github.com/johan-larp/agentsearch/internal/worker"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/security"
+	"github.com/johan-larp/agentsearch/internal/worker"
 )
 
 // siteProcessor реализует worker.Processor — логику обработки одного сайта.

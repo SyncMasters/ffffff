@@ -3,12 +3,13 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"github.com/johan-larp/agentsearch/internal/config"
-	"github.com/johan-larp/agentsearch/internal/models"
-	"github.com/johan-larp/agentsearch/internal/sources"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/johan-larp/agentsearch/internal/config"
+	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/sources"
 )
 
 type localTestSource struct{}

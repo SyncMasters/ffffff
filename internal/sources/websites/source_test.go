@@ -3,16 +3,17 @@ package websites
 import (
 	"context"
 	"errors"
-	"github.com/johan-larp/agentsearch/internal/models"
-	"github.com/johan-larp/agentsearch/internal/network"
-	"github.com/johan-larp/agentsearch/internal/ratelimit"
-	"github.com/johan-larp/agentsearch/internal/sources"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/network"
+	"github.com/johan-larp/agentsearch/internal/ratelimit"
+	"github.com/johan-larp/agentsearch/internal/sources"
 )
 
 func newTestSource(t *testing.T, sites []models.SiteConfig, client *http.Client) *Source {

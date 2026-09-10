@@ -3,6 +3,7 @@ package sources
 
 import (
 	"context"
+
 	"github.com/johan-larp/agentsearch/internal/models"
 	"github.com/johan-larp/agentsearch/internal/security"
 )

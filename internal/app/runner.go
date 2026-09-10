@@ -2,15 +2,16 @@ package app
 
 import (
 	"context"
-	"github.com/johan-larp/agentsearch/internal/models"
-	"github.com/johan-larp/agentsearch/internal/report"
-	"github.com/johan-larp/agentsearch/internal/sources"
-	"github.com/johan-larp/agentsearch/internal/storage"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/report"
+	"github.com/johan-larp/agentsearch/internal/sources"
+	"github.com/johan-larp/agentsearch/internal/storage"
 )
 
 // Runner executes typed searches without CLI, signals or output policy.

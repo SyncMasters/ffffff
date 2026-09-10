@@ -3,12 +3,12 @@ package network
 import (
 	"context"
 	"fmt"
-	"github.com/johan-larp/agentsearch/internal/security"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/johan-larp/agentsearch/internal/security"
 )
 
 // NewRetryableClient оборачивает http.Client в retryablehttp.Client.
