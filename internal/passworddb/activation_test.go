@@ -177,7 +177,11 @@ func TestCorruptionFailsClosed(t *testing.T) {
 	if e = os.WriteFile(manifestPath, raw, 0600); e != nil {
 		t.Fatal(e)
 	}
-	mutate(t, filepath.Join(dir, "hashes.bin"), 16, 0xff)
+	headerBytes, e := os.ReadFile(filepath.Join(dir, "hashes.bin"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	mutate(t, filepath.Join(dir, "hashes.bin"), 16, headerBytes[16]^1)
 	if v, e := loadVersion(ctx, dir, id, nil); e == nil {
 		v.Close()
 		t.Fatal("mismatched dataset header accepted")

@@ -59,3 +59,18 @@ func TestStrictImporter(t *testing.T) {
 		t.Fatal("absence failed")
 	}
 }
+
+func TestImporterRejectsDuplicatesAndDescendingGroups(t *testing.T) {
+	a := strings.Repeat("0", 40) + ":1\n"
+	b := "FFFFF" + strings.Repeat("0", 35) + ":1\n"
+	for _, text := range []string{a + a, b + a} {
+		input := filepath.Join(t.TempDir(), "artifact.txt")
+		if e := os.WriteFile(input, []byte(text), 0600); e != nil {
+			t.Fatal(e)
+		}
+		sum := sha256.Sum256([]byte(text))
+		if _, e := Import(context.Background(), t.TempDir(), input, ImportOptions{ExpectedSHA256: hex.EncodeToString(sum[:]), Complete: true, AcquiredAt: time.Now()}); e == nil {
+			t.Fatal("invalid ordering or duplicate accepted")
+		}
+	}
+}

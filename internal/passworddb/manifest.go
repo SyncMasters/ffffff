@@ -125,11 +125,20 @@ func readBounded(ctx context.Context, path string, limit int64) ([]byte, error) 
 	if st.Size() < 0 || st.Size() > limit {
 		return nil, problem("invalid_file_size")
 	}
-	b, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, r: f}, limit+1))
-	if int64(len(b)) > limit {
+	b := make([]byte, int(st.Size()))
+	reader := &contextReader{ctx: ctx, r: f}
+	if _, err = io.ReadFull(reader, b); err != nil {
+		return nil, err
+	}
+	var extra [1]byte
+	n, e := reader.Read(extra[:])
+	if n != 0 {
 		return nil, problem("invalid_file_size")
 	}
-	return b, err
+	if e != io.EOF {
+		return nil, e
+	}
+	return b, nil
 }
 
 type contextReader struct {
@@ -140,6 +149,9 @@ type contextReader struct {
 func (r *contextReader) Read(b []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
+	}
+	if len(b) > 1<<20 {
+		b = b[:1<<20]
 	}
 	return r.r.Read(b)
 }
