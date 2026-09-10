@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"net/url"
 	"sync"
 	"time"
@@ -24,17 +25,23 @@ func NewHostLimiter(delay time.Duration) *HostLimiter {
 
 // Wait блокирует вызывающую горутину до тех пор, пока не пройдет
 // достаточно времени с момента предыдущего запроса к этому хосту.
-func (rl *HostLimiter) Wait(rawURL string) {
+func (rl *HostLimiter) Wait(rawURL string) { _ = rl.WaitContext(context.Background(), rawURL) }
+
+// WaitContext is the cancellation-aware adapter used by website searches.
+func (rl *HostLimiter) WaitContext(ctx context.Context, rawURL string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if rl.delay <= 0 {
-		return
+		return nil
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return
+		return nil
 	}
 	host := u.Host
 	if host == "" {
-		return
+		return nil
 	}
 
 	rl.mu.Lock()
@@ -43,8 +50,18 @@ func (rl *HostLimiter) Wait(rawURL string) {
 	if last, ok := rl.lastRequest[host]; ok {
 		elapsed := time.Since(last)
 		if elapsed < rl.delay {
-			time.Sleep(rl.delay - elapsed)
+			timer := time.NewTimer(rl.delay - elapsed)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	rl.lastRequest[host] = time.Now()
+	return nil
 }

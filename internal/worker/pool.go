@@ -39,8 +39,7 @@ func NewPool(workers int, processor Processor) *Pool {
 	}
 }
 
-// Start запускает воркеров. Блокирует вызывающую горутину до отмены контекста
-// или закрытия канала jobs, после чего закрывает канал results.
+// Start launches workers asynchronously and closes results when they finish.
 func (p *Pool) Start(ctx context.Context) {
 	var wg sync.WaitGroup
 	for i := 0; i < p.workers; i++ {
@@ -90,4 +89,18 @@ func (p *Pool) Close() {
 // Results возвращает канал для чтения результатов.
 func (p *Pool) Results() <-chan models.Result {
 	return p.results
+}
+
+// SubmitContext preserves backpressure but cannot deadlock after workers exit
+// on cancellation. The submitting owner must still Close and drain Results.
+func (p *Pool) SubmitContext(ctx context.Context, job Job) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case p.jobs <- job:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

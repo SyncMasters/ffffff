@@ -61,8 +61,8 @@ func (ua *UARotator) loadFromFile(path string) error {
 
 // GetRandom возвращает случайный User-Agent.
 func (ua *UARotator) GetRandom() string {
-	ua.mu.RLock()
-	defer ua.mu.RUnlock()
+	ua.mu.Lock()
+	defer ua.mu.Unlock()
 	if len(ua.agents) == 0 {
 		return ""
 	}
