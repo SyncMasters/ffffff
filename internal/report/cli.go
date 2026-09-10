@@ -49,8 +49,8 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 	fmt.Fprintf(f, "Found: %d | Not Found: %d | Blocked: %d | Errors: %d\n\n",
 		summary.Found, summary.NotFound, summary.Blocked, summary.Errors)
 
-	fmt.Fprintf(f, "FOUND PROFILES:\n")
-	fmt.Fprintf(f, "%-30s %-10s %-10s %s\n", "SITE", "CONF", "STATUS", "URL")
+	fmt.Fprintf(f, "FOUND RESULTS:\n")
+	fmt.Fprintf(f, "%-30s %-10s %-10s %s\n", "SOURCE", "CONF", "STATUS", "URL")
 	fmt.Fprintln(f, strings.Repeat("-", 120))
 	for _, r := range results {
 		if r.Status == models.StatusFound {
@@ -58,7 +58,7 @@ func (c *CLIReport) Generate(target string, results []models.Result, duration ti
 		}
 	}
 
-	fmt.Fprintf(f, "\nBLOCKED BY WAF:\n")
+	fmt.Fprintf(f, "\nBLOCKED SOURCES:\n")
 	for _, r := range results {
 		if r.Status == models.StatusBlocked {
 			fmt.Fprintf(f, "- %s (%s)\n", r.SiteName, r.URL)
@@ -101,15 +101,15 @@ func printFoundTable(results []models.Result) {
 		}
 	}
 	if len(found) == 0 {
-		color.Red("No profiles found.\n")
+		color.Red("No successful matches to display.\n")
 		return
 	}
 
 	green := color.New(color.FgGreen, color.Bold)
-	green.Printf("✓ Found %d profile(s):\n\n", len(found))
+	green.Printf("✓ Found %d result(s):\n\n", len(found))
 
 	// Print table headings.
-	fmt.Printf("%-30s %-12s %-12s %s\n", "SITE", "CONFIDENCE", "LATENCY", "URL")
+	fmt.Printf("%-30s %-12s %-12s %s\n", "SOURCE", "CONFIDENCE", "LATENCY", "URL")
 	fmt.Println(strings.Repeat("─", 120))
 
 	for _, r := range found {
@@ -143,7 +143,7 @@ func printBlockedTable(results []models.Result) {
 	}
 
 	yellow := color.New(color.FgYellow, color.Bold)
-	yellow.Printf("⚠ Blocked by WAF on %d site(s):\n", len(blocked))
+	yellow.Printf("⚠ Blocked sources on %d source(s):\n", len(blocked))
 	for _, r := range blocked {
 		fmt.Printf("  • %s (%s)\n", r.SiteName, r.URL)
 	}
@@ -153,8 +153,10 @@ func printBlockedTable(results []models.Result) {
 func printFooter(s Summary) {
 	if s.Found > 0 {
 		color.Green("✓ Search completed. Detailed reports saved to output/ directory.\n\n")
+	} else if s.Errors > 0 {
+		color.Yellow("Search finished with errors. Review the error results.\n\n")
 	} else {
-		color.Yellow("⚠ No profiles found. Try adjusting confidence thresholds or using proxies.\n\n")
+		color.Yellow("No matches returned by the selected sources.\n\n")
 	}
 }
 

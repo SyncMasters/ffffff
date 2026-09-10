@@ -349,9 +349,9 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
   <div class="toolbar">
     <div class="search">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-      <label class="sr" for="q">Filter results by platform name</label>
+      <label class="sr" for="q">Filter results by source name</label>
       <input id="q" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Filter results by platform name..." aria-controls="results">
+             placeholder="Filter results by source name..." aria-controls="results">
       <button class="clear" type="button" id="clear" title="Clear filter" aria-label="Clear filter" hidden>&times;</button>
     </div>
     <div class="chips" role="group" aria-label="Filter by status">
@@ -390,7 +390,7 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
             <dd><a class="url" href="{{.FinalURL}}" target="_blank" rel="noopener noreferrer nofollow">{{.FinalURL}}</a></dd>
             {{end}}
             <dt>Status</dt>
-            <dd><b>{{if eq .Status "found"}}Found{{else if eq .Status "blocked"}}Blocked (WAF / rate-limited){{else if eq .Status "error"}}Error{{else}}Not found{{end}}</b></dd>
+            <dd><b>{{if eq .Status "found"}}Found{{else if eq .Status "blocked"}}Blocked{{else if eq .Status "error"}}Error{{else}}Not found{{end}}</b></dd>
             <dt>Latency</dt>
             <dd>{{.Duration}}</dd>
           </dl>
@@ -409,7 +409,7 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
           </dl>{{end}}
 
           <div class="actions">
-            <a class="btn btn--primary" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">Open profile ↗</a>
+            <a class="btn btn--primary" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">Open source ↗</a>
             <button class="btn" type="button" data-copy="{{.URL}}">Copy URL</button>
             <button class="btn" type="button" data-collapse>Close</button>
           </div>
@@ -419,7 +419,7 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
     {{end}}
   </ul>
 
-  <p class="empty" id="empty">No platforms match this filter.</p>
+  <p class="empty" id="empty">No sources match this filter.</p>
 
   <footer class="foot">AgentSearch · {{.Target}} · {{.Timestamp}}</footer>
 </div>
@@ -548,7 +548,7 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
       if (vis) shown++;
     }
     empty.classList.toggle("is-on", shown === 0);
-    count.textContent = shown + " of " + cards.length + " platforms";
+    count.textContent = shown + " of " + cards.length + " sources";
     if (clear) clear.hidden = !term;
   }
   var t;

@@ -77,6 +77,7 @@ func (s *Source) SearchEmail(ctx context.Context, email string, emit sources.Emi
 	target, validationErr := models.NewEmailTarget(email)
 	result := models.NewResult(s.Name(), s.Type(), target)
 	result.URL = "https://haveibeenpwned.com/"
+	result.SiteName = "Have I Been Pwned"
 	var breaches []Breach
 	var err error
 	if validationErr != nil {
@@ -118,7 +119,7 @@ func (s *Source) SearchEmail(ctx context.Context, email string, emit sources.Emi
 		row := result
 		row.Status = models.StatusFound
 		row.Confidence = 100
-		row.SiteName = "hibp / " + breach.Name
+		row.SiteName = "Have I Been Pwned / " + breach.Name
 		row.Metadata = map[string]string{
 			"breach_name": breach.Name, "breach_title": breach.Title, "domain": breach.Domain,
 			"breach_date": breach.BreachDate, "added_date": breach.AddedDate, "modified_date": breach.ModifiedDate,

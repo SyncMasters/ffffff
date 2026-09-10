@@ -47,15 +47,15 @@ func (d *DOCXReport) Generate(target string, results []models.Result, duration t
 	addBullet(doc, fmt.Sprintf("Total checks: %d", summary.Total))
 	addBullet(doc, fmt.Sprintf("Found: %d", summary.Found))
 	addBullet(doc, fmt.Sprintf("Not Found: %d", summary.NotFound))
-	addBullet(doc, fmt.Sprintf("Blocked by WAF: %d", summary.Blocked))
+	addBullet(doc, fmt.Sprintf("Blocked sources: %d", summary.Blocked))
 	addBullet(doc, fmt.Sprintf("Errors: %d", summary.Errors))
 	doc.AddParagraph()
 
-	// Found profiles
+	// Found results
 	if summary.Found > 0 {
 		h3 := doc.AddParagraph()
 		h3Run := h3.AddRun()
-		h3Run.AddText("Found Profiles")
+		h3Run.AddText("Found Results")
 		h3Run.Properties().SetBold(true)
 		h3Run.Properties().SetSize(18)
 
@@ -76,7 +76,7 @@ func (d *DOCXReport) Generate(target string, results []models.Result, duration t
 	if summary.Blocked > 0 {
 		h4 := doc.AddParagraph()
 		h4Run := h4.AddRun()
-		h4Run.AddText("Blocked by WAF")
+		h4Run.AddText("Blocked sources")
 		h4Run.Properties().SetBold(true)
 		h4Run.Properties().SetSize(18)
 
