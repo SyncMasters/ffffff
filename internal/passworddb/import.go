@@ -179,6 +179,9 @@ func Import(ctx context.Context, root, input string, opt ImportOptions) (id stri
 			break
 		}
 		if e != nil {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
 			return "", problem("invalid_or_incomplete_input")
 		}
 		r, p, e := parseLine(line, current)
@@ -256,6 +259,11 @@ func Import(ctx context.Context, root, input string, opt ImportOptions) (id stri
 	}
 	if err = data.Close(); err != nil {
 		return "", err
+	}
+	for _, name := range []string{"hashes.bin", "prefix.idx", "manifest.json"} {
+		if err = os.Chmod(filepath.Join(dir, name), 0400); err != nil {
+			return "", err
+		}
 	}
 	if err = syncDirectory(dir); err != nil {
 		return "", err
