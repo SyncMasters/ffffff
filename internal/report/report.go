@@ -2,6 +2,8 @@ package report
 
 import (
 	"fmt"
+	"encoding/json"
+	"github.com/johan-larp/agentsearch/internal/security"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -50,6 +52,7 @@ type TagStat struct {
 
 // BuildSummary агрегирует результаты в сводку.
 func BuildSummary(target string, results []models.Result, duration time.Duration) Summary {
+	target, results = normalizeResults(target, results)
 	s := Summary{
 		Target:       target,
 		Total:        len(results),
@@ -109,6 +112,7 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 
 // WriteAll генерирует все запрошенные форматы отчётов.
 func WriteAll(dir string, formats []string, target string, results []models.Result, duration time.Duration) error {
+	target, results = normalizeResults(target, results)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create report dir: %w", err)
 	}
@@ -153,16 +157,15 @@ func writeSummaryJSON(path string, summary Summary) error {
 	}
 	defer f.Close()
 
-	fmt.Fprintf(f, "{\n")
-	fmt.Fprintf(f, "  \"target\": \"%s\",\n", summary.Target)
-	fmt.Fprintf(f, "  \"total\": %d,\n", summary.Total)
-	fmt.Fprintf(f, "  \"found\": %d,\n", summary.Found)
-	fmt.Fprintf(f, "  \"not_found\": %d,\n", summary.NotFound)
-	fmt.Fprintf(f, "  \"blocked\": %d,\n", summary.Blocked)
-	fmt.Fprintf(f, "  \"errors\": %d,\n", summary.Errors)
-	fmt.Fprintf(f, "  \"duration\": \"%s\"\n", summary.Duration)
-	fmt.Fprintf(f, "}\n")
-	return nil
+	return json.NewEncoder(f).Encode(struct {
+ Target string `json:"target"`
+ Total int `json:"total"`
+ Found int `json:"found"`
+ NotFound int `json:"not_found"`
+ Blocked int `json:"blocked"`
+ Errors int `json:"errors"`
+ Duration string `json:"duration"`
+ }{summary.Target,summary.Total,summary.Found,summary.NotFound,summary.Blocked,summary.Errors,summary.Duration.String()})
 }
 
 func sanitizeFilename(name string) string {
@@ -171,4 +174,14 @@ func sanitizeFilename(name string) string {
 		"?", "_", "\"", "_", "<", "_", ">", "_", "|", "_", " ", "_",
 	)
 	return replacer.Replace(name)
+}
+
+// normalizeResults protects direct generator callers as well as the app path.
+// The legacy string argument is a display label, never sensitive input.
+func normalizeResults(target string, results []models.Result) (string, []models.Result) {
+ var secrets []string
+ for _,r:=range results { if r.TargetType.Sensitive() { secrets=append(secrets,target,r.Target);target=security.Redacted } }
+ out:=make([]models.Result,len(results))
+ for i,r:=range results { out[i]=r.Redacted(secrets...).Normalized() }
+ return security.Redact(target,secrets...),out
 }

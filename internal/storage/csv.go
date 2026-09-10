@@ -34,6 +34,7 @@ func NewCSVWriter(path string) (*CSVWriter, error) {
 
 // Write преобразует Result в CSV-запись.
 func (w *CSVWriter) Write(res models.Result) error {
+	res = res.Normalized()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

@@ -19,6 +19,7 @@ func NewCLIReport() *CLIReport {
 }
 
 func (c *CLIReport) Generate(target string, results []models.Result, duration time.Duration) (string, error) {
+	target, results = normalizeResults(target, results)
 	summary := BuildSummary(target, results, duration)
 
 	// Печатаем в stdout

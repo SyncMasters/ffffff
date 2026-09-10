@@ -30,6 +30,7 @@ func NewJSONWriter(path string) (*JSONWriter, error) {
 
 // Write сериализует результат и дописывает в файл с запятой-разделителем.
 func (w *JSONWriter) Write(res models.Result) error {
+	res = res.Normalized()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

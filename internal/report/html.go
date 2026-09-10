@@ -22,6 +22,7 @@ func NewHTMLReport() *HTMLReport {
 var reportTmpl = template.Must(template.New("report").Parse(htmlTemplate))
 
 func (h *HTMLReport) Generate(target string, results []models.Result, duration time.Duration) (string, error) {
+	target, results = normalizeResults(target, results)
 	summary := BuildSummary(target, results, duration)
 	path := filepath.Join("output", fmt.Sprintf("%s_report.html", sanitizeFilename(target)))
 
@@ -403,6 +404,10 @@ html:not(.js) .toolbar,html:not(.js) .chev{display:none}
           {{end}}
 
           {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+          {{if or .Evidence .Metadata}}<dl class="kv">
+            {{range .Evidence}}<dt>{{.Kind}}</dt><dd>{{.Value}}</dd>{{end}}
+            {{range $key, $value := .Metadata}}<dt>{{$key}}</dt><dd>{{$value}}</dd>{{end}}
+          </dl>{{end}}
 
           <div class="actions">
             <a class="btn btn--primary" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">Open profile ↗</a>

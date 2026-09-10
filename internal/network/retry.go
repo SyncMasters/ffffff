@@ -2,6 +2,8 @@ package network
 
 import (
 	"context"
+	"fmt"
+	"github.com/johan-larp/agentsearch/internal/security"
 	"log/slog"
 	"net/http"
 	"time"
@@ -33,10 +35,12 @@ func NewRetryableClient(base *http.Client, maxRetries int) *http.Client {
 	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		shouldRetry, checkErr := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if shouldRetry && resp != nil {
+			rawURL := ""
+			if resp.Request != nil && resp.Request.URL != nil { rawURL = resp.Request.URL.String() }
 			slog.Warn("retrying request",
 				"status", resp.StatusCode,
-				"url", resp.Request.URL.String(),
-				"error", err,
+				"url", security.Redact(rawURL),
+				"error", security.Redact(fmt.Sprint(err)),
 			)
 		}
 		return shouldRetry, checkErr

@@ -25,6 +25,7 @@ func NewTXTWriter(path string) (*TXTWriter, error) {
 
 // Write форматирует результат в строку.
 func (w *TXTWriter) Write(res models.Result) error {
+	res = res.Normalized()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

@@ -18,6 +18,7 @@ func NewDOCXReport() *DOCXReport {
 }
 
 func (d *DOCXReport) Generate(target string, results []models.Result, duration time.Duration) (string, error) {
+	target, results = normalizeResults(target, results)
 	summary := BuildSummary(target, results, duration)
 	path := filepath.Join("output", fmt.Sprintf("%s_report.docx", sanitizeFilename(target)))
 
