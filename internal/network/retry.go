@@ -36,7 +36,9 @@ func NewRetryableClient(base *http.Client, maxRetries int) *http.Client {
 		shouldRetry, checkErr := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
 		if shouldRetry && resp != nil {
 			rawURL := ""
-			if resp.Request != nil && resp.Request.URL != nil { rawURL = resp.Request.URL.String() }
+			if resp.Request != nil && resp.Request.URL != nil {
+				rawURL = resp.Request.URL.String()
+			}
 			slog.Warn("retrying request",
 				"status", resp.StatusCode,
 				"url", security.Redact(rawURL),

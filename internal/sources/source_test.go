@@ -111,3 +111,39 @@ func TestSensitiveDispatch(t *testing.T) {
 		t.Fatal("unsafe error")
 	}
 }
+
+type emailHashSource struct{}
+
+func (emailHashSource) Name() string            { return "email-hash-test" }
+func (emailHashSource) Type() models.SourceType { return models.SourceLocal }
+func (emailHashSource) SearchEmail(ctx context.Context, email string, emit Emit) error {
+	return emit(models.Result{Status: models.StatusFound, Metadata: map[string]string{"email": email}})
+}
+func (emailHashSource) SearchPasswordHash(ctx context.Context, hash security.Secret, emit Emit) error {
+	return emit(models.Result{Status: models.StatusNotFound, Metadata: map[string]string{"password_hash": hash.Reveal()}})
+}
+func TestEmailAndHashDispatch(t *testing.T) {
+	r := NewRegistry()
+	if err := r.Register(emailHashSource{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		kind  models.TargetType
+		value string
+	}{{models.TargetEmail, "alice@example.test"}, {models.TargetPasswordHash, "sensitive-hash"}} {
+		target, _ := models.NewTarget(tt.kind, tt.value)
+		count := 0
+		if err := NewManager(r).Search(context.Background(), target, func(result models.Result) error {
+			count++
+			if result.TargetType != tt.kind || result.Source != "email-hash-test" {
+				t.Error("wrong capability selected")
+			}
+			if tt.kind.Sensitive() && (result.Target != security.Redacted || result.Metadata["password_hash"] != security.Redacted) {
+				t.Error("hash exposed")
+			}
+			return nil
+		}); err != nil || count != 1 {
+			t.Fatal(err, count)
+		}
+	}
+}

@@ -1,8 +1,8 @@
 package report
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"github.com/johan-larp/agentsearch/internal/security"
 	"log/slog"
 	"os"
@@ -21,16 +21,16 @@ type Generator interface {
 
 // Summary содержит агрегированную статистику по результатам.
 type Summary struct {
-	Target        string
-	Total         int
-	Found         int
-	NotFound      int
-	Blocked       int
-	Errors        int
-	Duration      time.Duration
-	TopSites      []SiteStat
-	ByTag         map[string]TagStat
-	BlockedHosts  []string
+	Target       string
+	Total        int
+	Found        int
+	NotFound     int
+	Blocked      int
+	Errors       int
+	Duration     time.Duration
+	TopSites     []SiteStat
+	ByTag        map[string]TagStat
+	BlockedHosts []string
 }
 
 // SiteStat — статистика по одному сайту.
@@ -43,10 +43,10 @@ type SiteStat struct {
 
 // TagStat — статистика по тегу.
 type TagStat struct {
-	Tag        string
-	Total      int
-	Found      int
-	Blocked    int
+	Tag         string
+	Total       int
+	Found       int
+	Blocked     int
 	SuccessRate float64
 }
 
@@ -158,14 +158,14 @@ func writeSummaryJSON(path string, summary Summary) error {
 	defer f.Close()
 
 	return json.NewEncoder(f).Encode(struct {
- Target string `json:"target"`
- Total int `json:"total"`
- Found int `json:"found"`
- NotFound int `json:"not_found"`
- Blocked int `json:"blocked"`
- Errors int `json:"errors"`
- Duration string `json:"duration"`
- }{summary.Target,summary.Total,summary.Found,summary.NotFound,summary.Blocked,summary.Errors,summary.Duration.String()})
+		Target   string `json:"target"`
+		Total    int    `json:"total"`
+		Found    int    `json:"found"`
+		NotFound int    `json:"not_found"`
+		Blocked  int    `json:"blocked"`
+		Errors   int    `json:"errors"`
+		Duration string `json:"duration"`
+	}{summary.Target, summary.Total, summary.Found, summary.NotFound, summary.Blocked, summary.Errors, summary.Duration.String()})
 }
 
 func sanitizeFilename(name string) string {
@@ -179,9 +179,16 @@ func sanitizeFilename(name string) string {
 // normalizeResults protects direct generator callers as well as the app path.
 // The legacy string argument is a display label, never sensitive input.
 func normalizeResults(target string, results []models.Result) (string, []models.Result) {
- var secrets []string
- for _,r:=range results { if r.TargetType.Sensitive() { secrets=append(secrets,target,r.Target);target=security.Redacted } }
- out:=make([]models.Result,len(results))
- for i,r:=range results { out[i]=r.Redacted(secrets...).Normalized() }
- return security.Redact(target,secrets...),out
+	var secrets []string
+	for _, r := range results {
+		if r.TargetType.Sensitive() {
+			secrets = append(secrets, target, r.Target)
+			target = security.Redacted
+		}
+	}
+	out := make([]models.Result, len(results))
+	for i, r := range results {
+		out[i] = r.Redacted(secrets...).Normalized()
+	}
+	return security.Redact(target, secrets...), out
 }
