@@ -18,9 +18,10 @@ type ServicesConfig struct {
 	Services map[string]ServiceConfig `yaml:"services"`
 }
 type ServiceConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	APIURL    string `yaml:"api_url"`
-	APIKeyEnv string `yaml:"api_key_env"`
+	PasswordsAPIURL string `yaml:"passwords_api_url"`
+	Enabled         bool   `yaml:"enabled"`
+	APIURL          string `yaml:"api_url"`
+	APIKeyEnv       string `yaml:"api_key_env"`
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

@@ -8,6 +8,7 @@ require (
 	github.com/refraction-networking/utls v1.8.2
 	github.com/unidoc/unioffice v1.39.0
 	golang.org/x/net v0.38.0
+	golang.org/x/term v0.30.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

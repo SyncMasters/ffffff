@@ -30,6 +30,14 @@ func (a *App) Run(ctx context.Context) error {
 	// Cancel pending work on SIGINT or SIGTERM.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if a.cfg.Mode == config.ModePassword {
+		defer a.cfg.Password.Destroy()
+		target, err := models.NewSensitiveTarget(models.TargetPassword, a.cfg.Password)
+		if err != nil {
+			return err
+		}
+		return a.searchTarget(ctx, target)
+	}
 
 	for _, value := range a.cfg.Targets {
 		target, err := models.LegacyTarget(value)
@@ -81,6 +89,16 @@ func (a *App) searchTarget(ctx context.Context, target models.Target) error {
 	return searchErr
 }
 func (a *App) logResult(res models.Result) {
+	if res.TargetType == models.TargetPassword {
+		label := "ERROR"
+		if res.Status == models.StatusFound {
+			label = "PWNED"
+		} else if res.Status == models.StatusNotFound {
+			label = "NOT PWNED"
+		}
+		slog.Info(label, "source", res.SiteName, "method", res.Metadata["method"], "occurrences", res.Metadata["occurrences"], "error", res.Error)
+		return
+	}
 	switch res.Status {
 	case models.StatusFound:
 		slog.Info("match found", "source", res.SiteName, "url", res.URL, "confidence", res.Confidence)

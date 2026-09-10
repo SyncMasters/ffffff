@@ -1,4 +1,5 @@
-# Loaded only for explicit -email lookups. Legacy -u/-f searches ignore it.
+# Loaded for -email, or when explicitly passed with password mode.
+# Legacy -u/-f searches ignore it; enabled controls email lookup only.
 # Set enabled to true to allow HIBP email lookups.
 # Only an environment variable NAME belongs here, never a key value.
 services:
@@ -6,3 +7,6 @@ services:
     enabled: false
     api_url: "https://haveibeenpwned.com/api/v3"
     api_key_env: "HIBP_API_KEY"
+    # Optional password endpoint override; no API key is read or transmitted.
+    # An explicit password flag is its own opt-in, independent of email enabled.
+    passwords_api_url: "https://api.pwnedpasswords.com/range"

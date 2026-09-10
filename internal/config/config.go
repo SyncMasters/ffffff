@@ -1,13 +1,16 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/security"
 )
 
 type SearchMode string
@@ -15,11 +18,14 @@ type SearchMode string
 const (
 	ModeWebsites SearchMode = ""
 	ModeEmail    SearchMode = "email"
+	ModePassword SearchMode = "password"
 )
 
 // AppConfig holds CLI options and runtime settings.
 type AppConfig struct {
 	Mode                SearchMode
+	Password            security.Secret `json:"-" yaml:"-"`
+	PasswordPrompt      bool
 	ServicesFile        string
 	Targets             []string
 	SitesFile           string
@@ -44,16 +50,37 @@ func ParseFlags() (*AppConfig, error) { return ParseArgs(os.Args[1:]) }
 
 // ParseArgs preserves legacy flags while separating email breach lookups from
 // website searches. A fresh FlagSet makes parsing repeatable in tests.
-func ParseArgs(args []string) (*AppConfig, error) {
+func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
+	password := &passwordFlag{}
+	defer func() {
+		if cfg == nil {
+			password.value.Destroy()
+		}
+	}()
 	flags := flag.NewFlagSet("agentsearch", flag.ContinueOnError)
+	sensitiveArgs := false
+	for _, arg := range args {
+		name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if name == "password" || name == "password-prompt" {
+			sensitiveArgs = true
+		}
+	}
+	// flag's own diagnostics can echo any malformed value, including a secret
+	// supplied to a wrong flag. Silence them before parsing password arguments.
+	if sensitiveArgs {
+		flags.SetOutput(io.Discard)
+	}
+	flags.Var(password, "password", "Single Pwned Passwords lookup; exposes the argument to shell history/process listings; prefer -password-prompt")
+	passwordPrompt := flags.Bool("password-prompt", false, "Read one password from an interactive terminal without echo (recommended)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS [options]")
+		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -password VALUE | -password-prompt [options]")
 		fmt.Fprintln(flags.Output(), "Website flags never query HIBP. Email lookups require enabled service settings and an API key.")
+		fmt.Fprintln(flags.Output(), "Password range lookups require no API key; only five SHA-1 characters are transmitted.")
 		flags.PrintDefaults()
 	}
 	var (
 		email    = flags.String("email", "", "Email breach lookup through HIBP (not a website search)")
-		services = flags.String("services", "configs/services.yaml", "Service configuration for -email")
+		services = flags.String("services", "configs/services.yaml", "Service configuration for -email or an explicit password endpoint override")
 		u        = flags.String("u", "", "Target username or email")
 		f        = flags.String("f", "", "File with targets (one per line)")
 		s        = flags.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
@@ -73,15 +100,51 @@ func ParseArgs(args []string) (*AppConfig, error) {
 		retries  = flags.Int("retries", 2, "Max retries on 429/5xx errors")
 	)
 	if err := flags.Parse(args); err != nil {
+		if sensitiveArgs {
+			if errors.Is(err, flag.ErrHelp) {
+				flags.SetOutput(os.Stderr)
+				flags.Usage()
+				return nil, err
+			}
+			return nil, fmt.Errorf("invalid password lookup arguments; use -h for options")
+		}
 		return nil, err
 	}
 	selectedEmail := false
+	selectedPrompt, usedServices := false, false
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "email" {
 			selectedEmail = true
 		}
+		if f.Name == "password-prompt" {
+			selectedPrompt = true
+		}
+		if f.Name == "services" {
+			usedServices = true
+		}
 	})
-	if selectedEmail {
+	selectedPassword := password.seen || selectedPrompt
+	if selectedPassword {
+		if password.seen && selectedPrompt || selectedPrompt && !*passwordPrompt {
+			return nil, fmt.Errorf("choose exactly one of -password or -password-prompt")
+		}
+		if password.seen && password.value.Empty() {
+			return nil, fmt.Errorf("password input must not be empty")
+		}
+		allowed := map[string]bool{"password": true, "password-prompt": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if !allowed[f.Name] {
+				invalid = true
+			}
+		})
+		if invalid || flags.NArg() != 0 {
+			return nil, fmt.Errorf("password mode accepts one input and only services, timeout, output and report options")
+		}
+		if *rt <= 0 || *tt <= 0 {
+			return nil, fmt.Errorf("password lookup timeouts must be positive")
+		}
+	} else if selectedEmail {
 		allowed := map[string]bool{"email": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
 		var unsupported string
 		flags.Visit(func(f *flag.Flag) {
@@ -99,22 +162,17 @@ func ParseArgs(args []string) (*AppConfig, error) {
 			return nil, fmt.Errorf("email lookup timeouts must be positive")
 		}
 	} else {
-		usedServices := false
-		flags.Visit(func(f *flag.Flag) {
-			if f.Name == "services" {
-				usedServices = true
-			}
-		})
+
 		if usedServices {
-			return nil, fmt.Errorf("-services is only used with -email")
+			return nil, fmt.Errorf("-services is only used with -email or password mode")
 		}
 	}
 
-	if !selectedEmail && *u == "" && *f == "" {
-		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS")
+	if !selectedEmail && !selectedPassword && *u == "" && *f == "" {
+		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -password VALUE OR -password-prompt")
 	}
 
-	cfg := &AppConfig{
+	cfg = &AppConfig{
 		SitesFile:           *s,
 		ProxiesFile:         *p,
 		OutputDir:           *o,
@@ -130,6 +188,14 @@ func ParseArgs(args []string) (*AppConfig, error) {
 		MaxRetries:          *retries,
 	}
 
+	if selectedPassword {
+		cfg.Mode = ModePassword
+		cfg.Password = password.value
+		cfg.PasswordPrompt = *passwordPrompt
+		if usedServices {
+			cfg.ServicesFile = *services
+		}
+	}
 	if selectedEmail {
 		target, err := models.NewEmailTarget(*email)
 		if err != nil {
@@ -169,4 +235,20 @@ func ParseArgs(args []string) (*AppConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+// passwordFlag never retains an immutable copy or exposes its value in help.
+type passwordFlag struct {
+	value security.Secret
+	seen  bool
+}
+
+func (*passwordFlag) String() string { return security.Redacted }
+func (p *passwordFlag) Set(value string) error {
+	if p.seen {
+		return fmt.Errorf("password must be supplied only once")
+	}
+	p.seen = true
+	p.value = security.NewSecret(value)
+	return nil
 }

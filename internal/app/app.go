@@ -22,6 +22,13 @@ type App struct {
 
 // New constructs only the providers selected by the CLI mode.
 func New(cfg *config.AppConfig) (*App, error) {
+	if cfg.Mode == config.ModePassword {
+		application, err := newPasswordApp(cfg)
+		if err != nil {
+			cfg.Password.Destroy()
+		}
+		return application, err
+	}
 	if cfg.Mode == config.ModeEmail {
 		return newEmailApp(cfg)
 	}
@@ -92,6 +99,31 @@ func newEmailApp(cfg *config.AppConfig) (*App, error) {
 		return nil, err
 	}
 	source, err := hibp.NewSource(client)
+	if err != nil {
+		return nil, err
+	}
+	registry := sources.NewRegistry()
+	if err := registry.Register(source); err != nil {
+		return nil, err
+	}
+	return NewWithSources(cfg, registry), nil
+}
+
+// Password composition never resolves email credentials or builds website workers.
+func newPasswordApp(cfg *config.AppConfig) (*App, error) {
+	rangeURL := ""
+	if cfg.ServicesFile != "" {
+		settings, err := config.LoadServices(cfg.ServicesFile)
+		if err != nil {
+			return nil, err
+		}
+		rangeURL = settings.Services["hibp"].PasswordsAPIURL
+	}
+	client, err := hibp.NewPasswordClient(rangeURL, network.NewServiceClient(cfg.RequestTimeout))
+	if err != nil {
+		return nil, err
+	}
+	source, err := hibp.NewPasswordSource(client)
 	if err != nil {
 		return nil, err
 	}
