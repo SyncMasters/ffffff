@@ -15,7 +15,7 @@ const MaxBodyBytes = 32 << 10
 
 // decodeRequest clears its owned encoded buffers before returning to search.
 // JSON/runtime string copies cannot be guaranteed erased. Never log the DTO/body.
-func decodeRequest(raw []byte) (models.Target, error) {
+func decodeRequest(raw []byte, analysisFlag ...*bool) (models.Target, error) {
 	defer clear(raw)
 	invalid := func() (models.Target, error) { return models.Target{}, app.ErrInvalidSearch }
 	if !utf8.Valid(raw) {
@@ -38,7 +38,7 @@ func decodeRequest(raw []byte) (models.Target, error) {
 			return invalid()
 		}
 		name, ok := token.(string)
-		if !ok || (name != "type" && name != "target" && name != "password") {
+		if !ok || (name != "type" && name != "target" && name != "password" && name != "analysis") {
 			return invalid()
 		}
 		if _, exists := fields[name]; exists {
@@ -57,6 +57,14 @@ func decodeRequest(raw []byte) (models.Target, error) {
 	var extra any
 	if d.Decode(&extra) != io.EOF {
 		return invalid()
+	}
+	if value, ok := fields["analysis"]; ok {
+		if !bytes.Equal(bytes.TrimSpace(value), []byte("true")) && !bytes.Equal(bytes.TrimSpace(value), []byte("false")) {
+			return invalid()
+		}
+		if len(analysisFlag) > 0 && analysisFlag[0] != nil {
+			*analysisFlag[0] = bytes.Equal(bytes.TrimSpace(value), []byte("true"))
+		}
 	}
 	var kind, value, password string
 	if json.Unmarshal(fields["type"], &kind) != nil {

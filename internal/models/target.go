@@ -14,17 +14,19 @@ import (
 type TargetType string
 
 const (
-	TargetIP           TargetType = "ip"
-	TargetDomain       TargetType = "domain"
-	TargetUsername     TargetType = "username"
-	TargetEmail        TargetType = "email"
-	TargetPassword     TargetType = "password"
-	TargetPasswordHash TargetType = "password_hash"
+	TargetBitcoinTransaction TargetType = "bitcoin_tx"
+	TargetBitcoin            TargetType = "bitcoin"
+	TargetIP                 TargetType = "ip"
+	TargetDomain             TargetType = "domain"
+	TargetUsername           TargetType = "username"
+	TargetEmail              TargetType = "email"
+	TargetPassword           TargetType = "password"
+	TargetPasswordHash       TargetType = "password_hash"
 )
 
 func (t TargetType) Valid() bool {
 	switch t {
-	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash, TargetDomain, TargetIP:
+	case TargetUsername, TargetEmail, TargetPassword, TargetPasswordHash, TargetDomain, TargetIP, TargetBitcoin, TargetBitcoinTransaction:
 		return true
 	}
 	return false
@@ -40,6 +42,12 @@ type Target struct {
 }
 
 func NewTarget(kind TargetType, value string) (Target, error) {
+	if kind == TargetBitcoinTransaction {
+		return NewBitcoinTransactionTarget(value)
+	}
+	if kind == TargetBitcoin {
+		return NewBitcoinTarget(value)
+	}
 	if kind == TargetIP {
 		return NewIPTarget(value)
 	}

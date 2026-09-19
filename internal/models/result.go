@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/johan-larp/agentsearch/internal/security"
@@ -111,6 +112,14 @@ func (r Result) Redacted(secrets ...string) Result {
 // MarshalJSON is a final safety net for callers not using the dispatcher.
 func (r Result) MarshalJSON() ([]byte, error) {
 	type plain Result
+	if r.UnscoredObservation() {
+		// Unscored provider rows have no numeric confidence metric. Existing result
+		// schemas retain their historical confidence field unchanged.
+		return json.Marshal(struct {
+			plain
+			Confidence *int `json:"confidence,omitempty"`
+		}{plain: plain(r.Normalized())})
+	}
 	return json.Marshal(plain(r.Normalized()))
 }
 
@@ -144,4 +153,23 @@ func (r Result) Details() []Evidence {
 		details = append(details, Evidence{Kind: key, Value: r.Metadata[key]})
 	}
 	return details
+}
+
+// ProviderLabelObservation identifies this provider contract, never a free-form
+// metadata claim. It does not assert that the provider label is correct.
+func (r Result) ProviderLabelObservation() bool {
+	return r.Source == "bitcoin-labels" && r.SourceType == SourceAPI && r.TargetType == TargetBitcoin
+}
+
+// ConfidenceLabel avoids inventing a percentage for an unscored provider.
+func (r Result) ConfidenceLabel() string {
+	if r.UnscoredObservation() {
+		return "not scored"
+	}
+	return strconv.Itoa(r.Confidence) + "%"
+}
+
+// UnscoredObservation selects explicit provider contracts without invented scores.
+func (r Result) UnscoredObservation() bool {
+	return r.ProviderLabelObservation() || (r.Source == "bitcoin-tx" && r.SourceType == SourceAPI && r.TargetType == TargetBitcoinTransaction)
 }

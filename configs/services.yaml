@@ -1,4 +1,4 @@
-# Loaded for -email/-domain, or when explicitly passed to password mode/server.
+# Loaded for -email/-domain/-ip/-bitcoin, or when explicitly passed to password mode/server.
 # Legacy -u/-f searches ignore it. Providers default to disabled.
 # Each mode initializes only its compatible configured sources.
 # Only an environment variable NAME belongs here, never a key value.
@@ -28,3 +28,23 @@ services:
     enabled: false
     api_url: "https://api.ipinfo.io/lite"
     api_key_env: "IPINFO_API_KEY"
+
+  # Key-free Blockstream Esplora, confirmed Bitcoin mainnet observations only.
+  # Review the provider's terms/rate policy before enabling. No recursive lookups.
+  bitcoin:
+    enabled: false
+    api_url: "https://blockstream.info/api"
+    min_interval: "1s"
+
+  # Optional independent provider associations, NOT verified ownership.
+  # Runs for the same -bitcoin / API bitcoin target, even if bitcoin is disabled.
+  bitcoin_labels:
+    enabled: false
+    api_url: "https://www.walletexplorer.com/api/1/address-lookup"
+    min_interval: "1s"
+
+  # Independent opt-in: one passive mainnet transaction lookup, no enrichment.
+  bitcoin_tx:
+    enabled: false
+    api_url: "https://blockstream.info/api"
+    min_interval: "1s"

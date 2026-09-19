@@ -1,5 +1,18 @@
 # AgentSearch
 
+**Continuous Watch:** run `-watch-file watchlist.yaml -watch-interval 60s` for
+bounded, persistent monitoring through existing sources. See
+[watchlists, logs, failure semantics and Linux storage requirements](docs/watch.md).
+
+**Bitcoin Transaction Investigation:** independently opt-in, one bounded mainnet
+TXID lookup via `-bitcoin-tx TXID` or HTTP `type=bitcoin_tx`. See
+[configuration, neutral evidence and limits](docs/bitcoin-transactions.md).
+
+**Bitcoin Address Intelligence:** opt-in, bounded confirmed-mainnet observations via
+`-bitcoin ADDRESS` or HTTP `type=bitcoin`. See [setup, evidence semantics and limits](docs/bitcoin.md).
+Optional [WalletExplorer label intelligence](docs/bitcoin-labels.md) is separately enabled
+and reports external provider associations, not verified ownership.
+
 AgentSearch is a Go command-line tool with an optional operator HTTP API for authorized account discovery and exposure checks. It combines configurable website profile searches with authenticated email breach lookups and key-free Pwned Passwords range checks through [Have I Been Pwned (HIBP)](https://haveibeenpwned.com/), using a common result model and output pipeline.
 
 It is intended for defensive investigations, personal exposure checks, and security research where you have permission to query the target. A match is evidence to review, not proof of identity or of a currently compromised account.
@@ -13,8 +26,7 @@ It is intended for defensive investigations, personal exposure checks, and secur
 | Implemented | Single-password Pwned Passwords API lookup with local SHA-1 and a no-echo prompt |
 | Implemented | Fixed website worker pool, cancellable host delays, request timeouts, direct-request retries, proxy rotation, and User-Agent rotation |
 | Implemented | Status, message, regex, redirect, header, and WAF detection rules |
-| Implemented | Shared JSON, CSV, and TXT output; CLI and HTML reports |
-| License-dependent | DOCX reports through the existing UniOffice dependency |
+| Implemented | Target-independent JSON, CSV, TXT, HTML, PDF and DOCX reports; legacy CLI output |
 | Experimental | Website uTLS support; transport combinations have known limitations |
 | Implemented | Explicit offline Pwned Passwords backend with immutable snapshots and separate corpus maintenance |
 | Implemented | Authenticated, bounded HTTP searches over the same username/email/password engine |
@@ -25,7 +37,7 @@ It is intended for defensive investigations, personal exposure checks, and secur
 
 ## Installation
 
-Requirements: Go 1.24 or later, and network access to the sources you query. DOCX generation additionally requires a valid UniOffice license.
+Requirements: Go 1.24 or later, and network access to the sources you query. PDF uses an embedded font; DOCX has no runtime license requirement. See [reporting](docs/reporting.md) for verified limits.
 
 ```sh
 git clone https://github.com/johan-larp/AgentSearch.git
@@ -190,7 +202,7 @@ HTTP 200 alone does not mean pwned. A valid range with no matching suffix, or a 
 
 Human output includes the outcome, source, method `sha1-k-anonymity`, and occurrence count when available. JSON retains safe structured metadata; metadata values are strings for compatibility with the common model. The source is `pwned-passwords`, source type is `api`, target type is `password`, and target label is `[REDACTED]`. A positive exact corpus match uses the existing confidence value `100`; this is **not a probability of account compromise**. No `Result.Password` field is introduced.
 
-Common TXT, CLI, HTML, and DOCX paths render semantic details; CSV preserves its original nine columns and therefore does not carry the count/method metadata. Output names use `[REDACTED]`, never the input or its hash. Multiple password runs in the same directory overwrite that safe label; choose separate output/working directories to preserve results.
+Common TXT, CLI, HTML, and DOCX paths render semantic details; Legacy CSV preserves its original nine columns; its canonical `_report.csv` companion retains count/method metadata. Output names use `[REDACTED]`, never the input or its hash. Multiple password runs in the same directory overwrite that safe label; choose separate output/working directories to preserve results.
 
 **Corpus membership does not prove that any account was compromised.** NOT PWNED does not establish password strength, uniqueness, or safety; it only means no positive exact match was returned by the current corpus lookup. An API error means unknown, not safe.
 
@@ -255,9 +267,9 @@ Run `./agentsearch -h` for current help. Durations use Go syntax such as `250ms`
 | `-rl` | `500ms` | Website per-host delay; `0s` disables waiting |
 | `-rt` | `15s` | HTTP request timeout; positive in email/password modes |
 | `-tt` | `10m` | Deadline across the entire run, not per target |
-| `-o` | `output` | Result directory; see the report-directory limitation below |
-| `-of` | `json,csv,txt` | Comma-separated output formats |
-| `-rf` | `cli,html` | Comma-separated report formats: `cli,html,docx`; empty disables reports |
+| `-o` | `output` | All `-of` outputs and summary directory; legacy `-rf` uses `./output` |
+| `-of` | `json,csv,txt` | Comma-separated `json,csv,txt,html,pdf,docx` |
+| `-rf` | `cli,html` | Legacy `cli,json,csv,txt,html,pdf,docx`; empty disables reports |
 | `-ua` | unset | Extra website User-Agent values, one per line |
 | `-mc` | `500` | Website idle connection pool limit |
 | `-mch` | `100` | Website per-host connection limit |
@@ -363,9 +375,23 @@ The last line illustrates placeholders only. Keep credential-bearing proxy files
 - SIGINT/SIGTERM cancels active work. Already-delivered results are retained and streaming JSON is closed. Some in-flight website results may be discarded during cancellation.
 - The legacy website CLI can log a target failure without a failing final exit code. Email-mode lookup failures return nonzero. Do not rely solely on the legacy website exit status when validating a report.
 
+## Optional evidence-based AI analysis
+
+AI is disabled by default and never performs reconnaissance. Explicit `-ai` plus
+an enabled, separate `configs/ai.yaml` lets an OpenAI-compatible adapter interpret
+only a bounded, sanitized canonical evidence snapshot. The authenticated API supports
+an optional `analysis: true` request when the server is configured with `-ai-config`.
+Data may leave the local machine; credentials belong only in the configured environment
+variable. Model interpretations and failures remain separate from deterministic evidence.
+
+See [AI analysis](docs/ai-analysis.md) for architecture, configuration, privacy,
+classification/citation rules, resource limits, API compatibility and verified limits.
+Local tests do not establish model accuracy or eliminate hallucinations. No autonomous
+tools, source selection, monitoring decisions or live model verification were added.
+
 ## Outputs and reports
 
-All sources use the same `models.Result` and common writers. No HIBP-specific serializer or report generator is required.
+All sources use the same `models.Result`/Evidence and immutable canonical report snapshot. No provider-specific serializer is required. See [reporting architecture, schema, bounds and verification](docs/reporting.md). JSON/CSV retain compatibility files and add complete `_report.json` / `_report.csv` companions; all six `-of` formats honor `-o`.
 
 - **JSON:** the full normalized result array. Existing fields (`site_name`, `target`, `url`, `found`, `confidence`, `status`, `duration`, `error`, `final_url`) remain, alongside `source`, `source_type`, `target_type`, `evidence`, and `metadata`. Duration is in nanoseconds; optional fields may be absent.
 - **CSV:** the original nine-column projection; duration is in milliseconds:
@@ -374,10 +400,11 @@ All sources use the same `models.Result` and common writers. No HIBP-specific se
   site_name,target,url,found,confidence,status,duration_ms,error,final_url
   ```
 
-- **TXT:** per-result lines with status/source and normalized evidence/metadata. CSV retains the legacy projection; use JSON for complete structured detail.
+- **TXT:** readable bounded sections with source status, evidence, classifications, provenance, warnings and errors. Canonical CSV retains the same semantics in documented flattened rows.
 - **CLI:** an English terminal summary and plain-text report, including safe semantic details.
-- **HTML:** self-contained report with filters, status cards, evidence, and metadata. Remote text is escaped rather than interpreted as HTML.
-- **DOCX:** retained Word report generation with normalized semantic details, subject to UniOffice licensing. The license-dependent test skips explicitly if the license is unavailable.
+- **HTML:** responsive, self-contained, escaped evidence and metadata; no JavaScript, filters, external assets or active links.
+- **PDF:** embedded-font layout with wrapping and pagination; unsupported glyphs fail explicitly.
+- **DOCX:** deterministic license-free OOXML. ZIP/XML/relationship and python-docx checks pass; Word/LibreOffice interoperability has not been executed.
 - **Summary JSON:** counts of emitted results, generated when report formats are requested. With HIBP, two returned breaches count as two found results, not two HTTP requests.
 
 For example, a HIBP match includes:
@@ -406,12 +433,12 @@ For example, a HIBP match includes:
 }
 ```
 
-Website/email filenames are based on the target with unsafe filename characters replaced. Password outputs instead use the fixed `[REDACTED]` label. **Known limitation:** result files and summary JSON honor `-o`, but CLI/HTML/DOCX generators still write into `output/`. Runs using the same target can overwrite previous output; use separate working/output directories when preserving investigations. Existing output/report managers log some write failures rather than propagating them to the process exit status.
+Safe ordinary filenames are preserved; unsafe/reserved/long labels get a bounded slug and digest. Password outputs use `[REDACTED]`. Every `-of` output honors `-o`; only the legacy `-rf` bridge retains `./output`. Use separate directories to retain runs and avoid companion-name collisions. One-shot output failures now propagate to the caller. Files are individually published atomically on Linux, not as a transactional bundle.
 
-Stage 12 closes already-acquired writers if later output setup fails, checks CSV header-flush
+The retained legacy streaming writers close already-acquired writers if later output setup fails and check CSV header-flush
 failure during setup, and closes JSON files even when finalization fails. Primary errors and
 normal output schemas are preserved. Cleanup is not transactional rollback: files already created
-or truncated are not restored, and a failed write can still leave incomplete output.
+or truncated by those legacy writers are not restored. The new one-shot report pipeline instead renders before atomic publication; multi-file bundles remain nontransactional.
 
 ## Security considerations
 
@@ -456,7 +483,7 @@ Attribution is supplied by configured sources, not a cryptographic proof of orig
 
 The internal `Result.EvidenceSemantics()` view derives a bounded `Kind` and `Meaning` from those
 existing fields. It does not copy targets, URLs, evidence values, credentials or scores, and is
-**not attached to Result or serialized into JSON/HTTP/CSV/TXT/reports**. No public schema change,
+**not attached to Result or serialized into the existing API/legacy JSON schema**. Canonical companion reports now expose these meanings and conservative classifications. No API schema change,
 new metadata field, CLI flag or diagnostic event is introduced.
 
 | Internal kind | Legitimate interpretation |
@@ -875,4 +902,4 @@ See [ROADMAP.md](ROADMAP.md) for the next stages. Stages 3–6 (password API, of
 
 ## License
 
-AgentSearch is licensed under the [MIT License](LICENSE). Dependencies and external data retain their own license and service requirements, including HIBP attribution and UniOffice licensing.
+AgentSearch is licensed under the [MIT License](LICENSE). Dependencies and external data retain their own license and service requirements, including HIBP attribution and the PDF/font dependencies.

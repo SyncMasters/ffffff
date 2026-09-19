@@ -19,7 +19,7 @@ func SensitiveKey(key string) bool {
 }
 
 var userinfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^\s/@]+@`)
-var headers = regexp.MustCompile(`(?im)((?:proxy-)?authorization\s*[:=]\s*)[^\r\n]+`)
+var headers = regexp.MustCompile(`(?im)((?:(?:proxy-)?authorization|(?:set-)?cookie)\s*[:=]\s*)[^\r\n]+`)
 var keyed = regexp.MustCompile(`(?i)((?:password|passwd|api[_-]?key|access[_-]?token|token|client[_-]?secret)\s*[=:]\s*)[^&\s,;]+`)
 
 // Redact removes known secrets (including URL-encoded forms), URL userinfo,

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
+	"github.com/johan-larp/agentsearch/internal/analysis"
 	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/network"
 	"github.com/johan-larp/agentsearch/internal/passworddb"
@@ -18,9 +20,10 @@ import (
 )
 
 type App struct {
-	cfg    *config.AppConfig
-	runner *Runner
-	close  func() error
+	analyzer *analysis.Service
+	cfg      *config.AppConfig
+	runner   *Runner
+	close    func() error
 }
 
 // New constructs only the providers selected by the CLI mode.
@@ -48,6 +51,12 @@ func NewWithContext(ctx context.Context, cfg *config.AppConfig) (*App, error) {
 			cfg.Password.Destroy()
 		}
 		return application, err
+	}
+	if cfg.Mode == config.ModeBitcoinTransaction {
+		return newBitcoinTransactionApp(cfg)
+	}
+	if cfg.Mode == config.ModeBitcoin {
+		return newBitcoinApp(cfg)
 	}
 	if cfg.Mode == config.ModeIP {
 		return newIPApp(cfg)
@@ -82,6 +91,17 @@ func NewWithContext(ctx context.Context, cfg *config.AppConfig) (*App, error) {
 	sites, err := config.LoadSites(cfg.SitesFile)
 	if err != nil {
 		return nil, fmt.Errorf("load sites: %w", err)
+	}
+	if cfg.WatchFile != "" {
+		if len(sites) == 0 || len(sites) > 256 {
+			return nil, fmt.Errorf("watch mode requires 1-256 enabled configured websites")
+		}
+		for _, site := range sites {
+			method := strings.ToUpper(site.RequestMethod)
+			if (method != "" && method != "GET" && method != "HEAD") || site.RequestPayload != "" {
+				return nil, fmt.Errorf("watch mode requires read-only GET/HEAD websites without payloads")
+			}
+		}
 	}
 	slog.Info("sites database loaded", "count", len(sites))
 

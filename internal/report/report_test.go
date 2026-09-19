@@ -25,9 +25,7 @@ func TestGenericReports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path, err := tt.gen.Generate("never-print-this", results, time.Second)
 			if err != nil {
-				if tt.name == "docx" && (strings.Contains(strings.ToLower(err.Error()), "license") || strings.Contains(strings.ToLower(err.Error()), "unlicensed")) {
-					t.Skipf("existing UniOffice license requirement: %v", err)
-				}
+
 				t.Fatal(err)
 			}
 			var data []byte

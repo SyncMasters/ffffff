@@ -21,6 +21,14 @@ type Source interface {
 // Partial results are valid even when the search subsequently returns an error.
 type Emit func(models.Result) error
 
+type BitcoinTransactionSearcher interface {
+	SearchBitcoinTransaction(context.Context, string, Emit) error
+}
+
+type BitcoinSearcher interface {
+	SearchBitcoin(context.Context, string, Emit) error
+}
+
 type IPSearcher interface {
 	SearchIP(context.Context, string, Emit) error
 }
@@ -50,6 +58,12 @@ type PasswordHashSearcher interface {
 // cannot drift away from the operations actually provided.
 func Capabilities(s Source) []models.TargetType {
 	var out []models.TargetType
+	if _, ok := s.(BitcoinTransactionSearcher); ok {
+		out = append(out, models.TargetBitcoinTransaction)
+	}
+	if _, ok := s.(BitcoinSearcher); ok {
+		out = append(out, models.TargetBitcoin)
+	}
 	if _, ok := s.(IPSearcher); ok {
 		out = append(out, models.TargetIP)
 	}

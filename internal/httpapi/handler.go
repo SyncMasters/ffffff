@@ -17,10 +17,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/johan-larp/agentsearch/internal/analysis"
 	"github.com/johan-larp/agentsearch/internal/app"
 	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/diagnostics"
 	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/report"
 	"github.com/johan-larp/agentsearch/internal/security"
 	"github.com/johan-larp/agentsearch/internal/sources"
 	"github.com/johan-larp/agentsearch/internal/sources/hibp"
@@ -31,6 +33,7 @@ type Searcher interface {
 	Search(context.Context, models.Target, sources.Emit) error
 }
 type Handler struct {
+	analyzer    *analysis.Service
 	readTimeout time.Duration
 	searcher    Searcher
 	tokenHash   [32]byte
@@ -40,12 +43,15 @@ type Handler struct {
 }
 
 // New consumes the bootstrap bearer token. Only its digest is retained for comparison.
-func New(searcher Searcher, token security.Secret, cfg config.ServerConfig, logger *slog.Logger) (*Handler, error) {
+func New(searcher Searcher, token security.Secret, cfg config.ServerConfig, logger *slog.Logger, analyzers ...*analysis.Service) (*Handler, error) {
 	defer token.Destroy()
 	if searcher == nil || cfg.Validate() != nil {
 		return nil, errors.New("invalid HTTP service configuration")
 	}
 	h := &Handler{searcher: searcher, timeout: cfg.RequestTimeout, readTimeout: cfg.ReadTimeout, admission: make(chan struct{}, cfg.MaxConcurrent), log: logger}
+	if len(analyzers) > 0 {
+		h.analyzer = analyzers[0]
+	}
 	if h.log == nil {
 		h.log = slog.Default()
 	}
@@ -72,8 +78,10 @@ type apiError struct {
 	Message string `json:"message"`
 }
 type response struct {
-	Results []models.Result `json:"results,omitempty"`
-	Error   *apiError       `json:"error,omitempty"`
+	Report   *report.Report   `json:"report,omitempty"`
+	Analysis *models.Analysis `json:"analysis,omitempty"`
+	Results  []models.Result  `json:"results,omitempty"`
+	Error    *apiError        `json:"error,omitempty"`
 }
 type writer struct {
 	http.ResponseWriter
@@ -247,7 +255,8 @@ func (h *Handler) search(w *writer, r *http.Request) {
 		}
 		return
 	}
-	target, e := decodeRequest(raw) // clears encoded buffers before provider invocation
+	requestedAnalysis := false
+	target, e := decodeRequest(raw, &requestedAnalysis) // clears encoded buffers before provider invocation
 	if e != nil {
 		fail(w, 400, "invalid_request", "invalid search request")
 		return
@@ -258,6 +267,7 @@ func (h *Handler) search(w *writer, r *http.Request) {
 	}
 	rows := make([]models.Result, 0)
 	limited := false
+	searchStarted := time.Now()
 	e = h.searcher.Search(ctx, target, func(r models.Result) error {
 		if len(rows) >= 10000 {
 			limited = true
@@ -287,13 +297,26 @@ func (h *Handler) search(w *writer, r *http.Request) {
 			rows[i] = models.Result{Source: r.Source, SourceType: r.SourceType, SiteName: r.SiteName, Target: r.Target, TargetType: r.TargetType, Status: models.StatusError, Duration: r.Duration, Error: "source lookup failed"}.Normalized()
 		}
 	}
+	var interpretation *models.Analysis
+	var canonical *report.Report
+	if requestedAnalysis {
+		result := analysis.Failed("input_too_large")
+		snapshot, snapshotErr := report.New(target.Type(), target.String(), rows, report.Options{CreatedAt: searchStarted, Duration: time.Since(searchStarted), Partial: apiErr != nil})
+		if snapshotErr == nil {
+			result = h.analyzer.Analyze(ctx, snapshot)
+			canonical, _ = snapshot.WithAnalysis(result)
+		}
+		interpretation = &result
+	}
 	if len(rows) == 0 && apiErr == nil {
 		send(w, status, struct {
-			Results []models.Result `json:"results"`
-		}{rows})
+			Results  []models.Result  `json:"results"`
+			Analysis *models.Analysis `json:"analysis,omitempty"`
+			Report   *report.Report   `json:"report,omitempty"`
+		}{rows, interpretation, canonical})
 		return
 	}
-	send(w, status, response{Results: rows, Error: apiErr})
+	send(w, status, response{Results: rows, Error: apiErr, Analysis: interpretation, Report: canonical})
 }
 func classify(ctx context.Context, err error, rows []models.Result) (int, *apiError, string) {
 	failure := func(status int, code, message string) (int, *apiError, string) {

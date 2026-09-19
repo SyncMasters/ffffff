@@ -53,6 +53,24 @@ func NewSearchTarget(kind, value string, password []byte) (models.Target, error)
 			}
 		}
 		return models.NewTarget(models.TargetUsername, value)
+	case models.TargetBitcoinTransaction:
+		if len(password) != 0 {
+			return models.Target{}, ErrInvalidSearch
+		}
+		target, err := models.NewBitcoinTransactionTarget(value)
+		if err != nil {
+			return models.Target{}, ErrInvalidSearch
+		}
+		return target, nil
+	case models.TargetBitcoin:
+		if len(password) != 0 {
+			return models.Target{}, ErrInvalidSearch
+		}
+		target, err := models.NewBitcoinTarget(value)
+		if err != nil {
+			return models.Target{}, ErrInvalidSearch
+		}
+		return target, nil
 	case models.TargetIP:
 		if len(password) != 0 {
 			return models.Target{}, ErrInvalidSearch
@@ -128,6 +146,16 @@ func NewSearchService(ctx context.Context, base config.AppConfig) (s *SearchServ
 		if e != nil {
 			return s, errors.New("invalid service configuration")
 		}
+		if settings.Services["bitcoin_tx"].Enabled {
+			if err = add(models.TargetBitcoinTransaction, config.ModeBitcoinTransaction); err != nil {
+				return s, err
+			}
+		}
+		if settings.Services["bitcoin"].Enabled || settings.Services["bitcoin_labels"].Enabled {
+			if err = add(models.TargetBitcoin, config.ModeBitcoin); err != nil {
+				return s, err
+			}
+		}
 		if settings.Services["ipinfo"].Enabled {
 			if err = add(models.TargetIP, config.ModeIP); err != nil {
 				return s, err
@@ -182,4 +210,11 @@ func (s *SearchService) Close() error {
 	}
 	s.apps = nil
 	return err
+}
+
+// Supports reports configured target capability without making a request.
+func (s *SearchService) Supports(kind models.TargetType) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return !s.closed && s.apps[kind] != nil
 }

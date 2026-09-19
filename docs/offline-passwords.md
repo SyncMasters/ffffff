@@ -277,8 +277,9 @@ complete guarantee against remote mounts, mapped drives or cloud-sync folders.
   not probability of account compromise. Absence is not proof of password safety.
 - No plaintext or query digest/prefix/suffix is placed in generic outputs, errors
   or logs. Secret cleanup is best-effort, not secure-memory or GC-erasure proof.
-- Existing output paths, CSV's nine-column schema and some logged-but-not-propagated
-  writer errors remain. DOCX generation still requires a UniOffice license.
+- Legacy CSV retains nine columns and gains a complete canonical companion. All six
+  `-of` formats honor `-o`, and one-shot output failures propagate. DOCX no longer
+  requires a runtime license; see [reporting](reporting.md) for verification limits.
 - Native Windows runtime, actual full-corpus compatibility, power-loss laboratory
   behavior and production-scale performance are **UNVERIFIED**. Cross-compilation
   is not native testing. These are operational follow-ups, not implemented features.

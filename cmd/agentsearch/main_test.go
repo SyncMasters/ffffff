@@ -72,7 +72,7 @@ func TestCLICompatibility(t *testing.T) {
 			_ = os.WriteFile(targets, []byte("# comment\n\nbob\n"), 0600)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, binary, "-u", "alice", "-f", targets, "-s", sitePath, "-w", "2", "-rl", "0s", "-rt", "1s", "-tt", "5s", "-o", "results", "-of", "json,csv,txt", "-rf", "cli,html,docx", "-retries", "1")
+			cmd := exec.CommandContext(ctx, binary, "-u", "alice", "-f", targets, "-s", sitePath, "-w", "2", "-rl", "0s", "-rt", "1s", "-tt", "5s", "-o", "results", "-of", "json,csv,txt,html,pdf,docx", "-rf", "cli,html,docx", "-retries", "1")
 			cmd.Dir = dir
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -108,9 +108,8 @@ func TestCLICompatibility(t *testing.T) {
 				if err != nil || len(records) != 3 || len(records[0]) != 9 {
 					t.Fatal("CSV compatibility", err)
 				}
-				// Existing report generators use output/, independently of -o. Preserve and
-				// explicitly characterize that limitation rather than hiding it in tests.
-				for _, path := range []string{filepath.Join("results", target+".txt"), filepath.Join("results", target+"_summary.json"), filepath.Join("output", target+"_report.txt"), filepath.Join("output", target+"_report.html")} {
+				// The legacy -rf bridge retains output/; every -of format respects -o.
+				for _, path := range []string{filepath.Join("results", target+".html"), filepath.Join("results", target+".pdf"), filepath.Join("results", target+".docx"), filepath.Join("results", target+"_report.json"), filepath.Join("results", target+"_report.csv"), filepath.Join("output", target+"_report.docx"), filepath.Join("results", target+".txt"), filepath.Join("results", target+"_summary.json"), filepath.Join("output", target+"_report.txt"), filepath.Join("output", target+"_report.html")} {
 					if _, err := os.Stat(filepath.Join(dir, path)); err != nil {
 						t.Fatal(path, err)
 					}

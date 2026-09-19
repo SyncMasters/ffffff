@@ -158,4 +158,4 @@ Cooperative cleanup remains required; no live-provider/native Windows/production
 - [ ] Optional AI analysis of normalized results.
 - [ ] Further external providers through capability-specific interfaces.
 
-Existing CLI/HTML reports, license-dependent DOCX generation, website retries, proxy rotation, and WAF detection remain present. Their inherited limitations, including output paths and error propagation, are documented in the [README](README.md), not presented as new integrations.
+Target-independent JSON/CSV/TXT/HTML/PDF/DOCX reporting is described in [reporting](docs/reporting.md), including compatibility paths and verified limits. Website retries, proxy rotation and WAF detection remain existing features, not new integrations.

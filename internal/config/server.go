@@ -12,6 +12,7 @@ import (
 // ServerConfig is operator-only. No HTTP request can change these settings.
 // Engine options feed the existing App constructors without another engine.
 type ServerConfig struct {
+	AIConfig                                               string
 	ShutdownTimeout                                        time.Duration
 	Listen                                                 string
 	TokenEnv                                               string
@@ -28,6 +29,7 @@ func ParseServerArgs(args []string) (ServerConfig, error) {
 	cfg := DefaultServerConfig()
 	f := flag.NewFlagSet("agentsearch-server", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	f.StringVar(&cfg.AIConfig, "ai-config", "", "Optional separate AI configuration; requests still require analysis:true")
 	f.StringVar(&cfg.Listen, "listen", cfg.Listen, "HTTP listen address (private loopback by default)")
 	f.StringVar(&cfg.TokenEnv, "token-env", cfg.TokenEnv, "Environment variable containing the bearer token")
 	f.DurationVar(&cfg.ReadTimeout, "read-timeout", cfg.ReadTimeout, "HTTP read timeout")

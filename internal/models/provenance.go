@@ -5,12 +5,15 @@ package models
 type ObservationKind string
 
 const (
-	ObservationUnknown  ObservationKind = "unknown"
-	ObservationWebsite  ObservationKind = "website_detection"
-	ObservationBreach   ObservationKind = "breach_association"
-	ObservationIP       ObservationKind = "ip_profile"
-	ObservationDomain   ObservationKind = "domain_profile"
-	ObservationPassword ObservationKind = "password_corpus"
+	ObservationUnknown            ObservationKind = "unknown"
+	ObservationWebsite            ObservationKind = "website_detection"
+	ObservationBreach             ObservationKind = "breach_association"
+	ObservationBitcoinLabels      ObservationKind = "bitcoin_label_association"
+	ObservationBitcoinTransaction ObservationKind = "bitcoin_transaction"
+	ObservationBitcoin            ObservationKind = "bitcoin_address"
+	ObservationIP                 ObservationKind = "ip_profile"
+	ObservationDomain             ObservationKind = "domain_profile"
+	ObservationPassword           ObservationKind = "password_corpus"
 )
 
 // EvidenceMeaning interprets a source result within its lookup scope. Absence
@@ -41,6 +44,12 @@ type EvidenceSemantics struct {
 func (r Result) EvidenceSemantics() EvidenceSemantics {
 	view := EvidenceSemantics{Kind: ObservationUnknown, Meaning: MeaningUnknown}
 	switch {
+	case r.Source == "bitcoin-tx" && r.SourceType == SourceAPI && r.TargetType == TargetBitcoinTransaction:
+		view.Kind = ObservationBitcoinTransaction
+	case r.ProviderLabelObservation():
+		view.Kind = ObservationBitcoinLabels
+	case r.Source == "bitcoin" && r.SourceType == SourceAPI && r.TargetType == TargetBitcoin:
+		view.Kind = ObservationBitcoin
 	case r.Source == "ipinfo" && r.SourceType == SourceAPI && r.TargetType == TargetIP:
 		view.Kind = ObservationIP
 	case r.SourceType == SourceWebsite && (r.TargetType == TargetUsername || r.TargetType == TargetEmail):
@@ -59,8 +68,11 @@ func (r Result) EvidenceSemantics() EvidenceSemantics {
 		view.Meaning = MeaningObservation
 	case StatusNotFound:
 		switch view.Kind {
-		case ObservationBreach, ObservationPassword:
+		case ObservationBreach, ObservationPassword, ObservationBitcoinTransaction:
 			view.Meaning = MeaningAbsence
+		case ObservationBitcoinLabels:
+			// Provider-scoped no-label is still an observation, not identity absence.
+			view.Meaning = MeaningObservation
 		case ObservationWebsite:
 			// A rule-generated negative, including fallback HTTP-status heuristics,
 			// is an observation of detector output, not verified profile absence.

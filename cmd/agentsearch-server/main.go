@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/johan-larp/agentsearch/internal/analysis"
 	"github.com/johan-larp/agentsearch/internal/app"
 	"github.com/johan-larp/agentsearch/internal/config"
 	"github.com/johan-larp/agentsearch/internal/httpapi"
@@ -28,7 +29,7 @@ func main() {
 func run(ctx context.Context, args []string, logger *slog.Logger) int {
 	cfg, err := config.ParseServerArgs(args)
 	if err == flag.ErrHelp {
-		fmt.Fprintln(os.Stdout, "Usage: agentsearch-server [-listen 127.0.0.1:8080] [-token-env AGENTSEARCH_API_TOKEN]\nHTTP: -read-timeout 15s -write-timeout 75s -idle-timeout 60s -request-timeout 60s -max-concurrent 8 -shutdown-timeout 10s\nSources: -s configs/sites.yaml -services FILE -password-backend api|local -password-db ROOT\nWebsite/provider options: -w 10 -p FILE -ua FILE -rl 500ms -rt 15s -retries 2 -utls\nSearch requires an environment-supplied bearer token. Use TLS termination for non-loopback deployment.")
+		fmt.Fprintln(os.Stdout, "Usage: agentsearch-server [-listen 127.0.0.1:8080] [-token-env AGENTSEARCH_API_TOKEN]\nHTTP: -read-timeout 15s -write-timeout 75s -idle-timeout 60s -request-timeout 60s -max-concurrent 8 -shutdown-timeout 10s\nSources: -s configs/sites.yaml -services FILE -password-backend api|local -password-db ROOT\nWebsite/provider options: -w 10 -p FILE -ua FILE -rl 500ms -rt 15s -retries 2 -utls\nAnalysis: -ai-config FILE (also requires request analysis:true). Search requires an environment-supplied bearer token. Use TLS termination for non-loopback deployment.")
 		return 0
 	}
 	if err != nil {
@@ -52,7 +53,13 @@ func run(ctx context.Context, args []string, logger *slog.Logger) int {
 			_ = service.Close()
 		}
 	}()
-	handler, err := httpapi.New(service, token, cfg, logger)
+	var analyzer *analysis.Service
+	if cfg.AIConfig != "" {
+		var closeAI func()
+		analyzer, closeAI = analysis.FromFile(cfg.AIConfig)
+		defer closeAI()
+	}
+	handler, err := httpapi.New(service, token, cfg, logger, analyzer)
 	if err != nil {
 		logger.Error("server authentication configuration failed")
 		return 1

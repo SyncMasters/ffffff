@@ -2,12 +2,11 @@ package storage
 
 import (
 	"encoding/csv"
-	"fmt"
 	"os"
-	"strconv"
 	"sync"
 
 	"github.com/johan-larp/agentsearch/internal/models"
+	"github.com/johan-larp/agentsearch/internal/report"
 )
 
 // CSVWriter writes results with the legacy CSV header.
@@ -24,7 +23,7 @@ func NewCSVWriter(path string) (*CSVWriter, error) {
 		return nil, err
 	}
 	writer := csv.NewWriter(f)
-	header := []string{"site_name", "target", "url", "found", "confidence", "status", "duration_ms", "error", "final_url"}
+	header := report.LegacyCSVHeader
 	if err := writer.Write(header); err != nil {
 		_ = f.Close()
 		return nil, err
@@ -43,17 +42,7 @@ func (w *CSVWriter) Write(res models.Result) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	record := []string{
-		res.SiteName,
-		res.Target,
-		res.URL,
-		strconv.FormatBool(res.Found),
-		strconv.Itoa(res.Confidence),
-		string(res.Status),
-		fmt.Sprintf("%d", res.Duration.Milliseconds()),
-		res.Error,
-		res.FinalURL,
-	}
+	record := report.LegacyCSVRecord(res)
 	if err := w.w.Write(record); err != nil {
 		return err
 	}

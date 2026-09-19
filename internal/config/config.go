@@ -21,15 +21,24 @@ const (
 type SearchMode string
 
 const (
-	ModeWebsites SearchMode = ""
-	ModeEmail    SearchMode = "email"
-	ModeIP       SearchMode = "ip"
-	ModeDomain   SearchMode = "domain"
-	ModePassword SearchMode = "password"
+	ModeWatch              SearchMode = "watch"
+	ModeWebsites           SearchMode = ""
+	ModeEmail              SearchMode = "email"
+	ModeBitcoinTransaction SearchMode = "bitcoin_tx"
+	ModeBitcoin            SearchMode = "bitcoin"
+	ModeIP                 SearchMode = "ip"
+	ModeDomain             SearchMode = "domain"
+	ModePassword           SearchMode = "password"
 )
 
 // AppConfig holds CLI options and runtime settings.
 type AppConfig struct {
+	AI                   bool
+	AIConfig             string
+	WatchFile            string
+	WatchStateDir        string
+	WatchInterval        time.Duration
+	WatchConcurrency     int
 	Mode                 SearchMode
 	Password             security.Secret `json:"-" yaml:"-"`
 	PasswordPrompt       bool
@@ -80,6 +89,8 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 	// flag's diagnostics may echo arbitrary arguments. Keep errors out of logs;
 	// explicit help is restored below and never prints supplied values.
 	flags.SetOutput(io.Discard)
+	ai := flags.Bool("ai", false, "Opt in to external analysis of sanitized investigation evidence")
+	aiConfig := flags.String("ai-config", "configs/ai.yaml", "Separate operator AI configuration; used only with -ai")
 	flags.Var(password, "password", "Single Pwned Passwords lookup; exposes the argument to shell history/process listings; prefer -password-prompt")
 	passwordPrompt := flags.Bool("password-prompt", false, "Read one password from an interactive terminal without echo (recommended)")
 	backend, database := PasswordBackendAPI, ""
@@ -100,34 +111,40 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		database = value
 		return nil
 	})
+	watchFile := flags.String("watch-file", "", "Continuously investigate a public-target YAML watchlist")
+	watchInterval := flags.Duration("watch-interval", 60*time.Second, "Delay after each watch cycle (30s-299s)")
+	watchDir := flags.String("watch-state-dir", "agentsearch-watch", "Private monitoring state and bounded JSONL logs directory")
+	watchConcurrency := flags.Int("watch-concurrency", 4, "Concurrent watch targets (1-4)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: agentsearch -u TARGET | -f FILE | -email ADDRESS | -domain HOSTNAME | -ip ADDRESS | -password VALUE | -password-prompt [options]")
+		fmt.Fprintln(flags.Output(), "Usage: agentsearch -watch-file YAML | -u TARGET | -f FILE | -email ADDRESS | -domain HOSTNAME | -ip ADDRESS | -bitcoin ADDRESS | -bitcoin-tx TXID | -password VALUE | -password-prompt [options]")
 		fmt.Fprintln(flags.Output(), "Website flags never query HIBP. Email lookups require enabled service settings and an API key.")
 		fmt.Fprintln(flags.Output(), "Password API lookups require no API key and transmit only five SHA-1 characters. Explicit local mode makes no requests.")
 		flags.PrintDefaults()
 	}
 	var (
-		ip       = flags.String("ip", "", "Passive IP intelligence through configured IPinfo Lite (no scanning)")
-		domain   = flags.String("domain", "", "Domain intelligence through configured external sources (not a website search)")
-		email    = flags.String("email", "", "Email breach lookup through HIBP (not a website search)")
-		services = flags.String("services", "configs/services.yaml", "Service configuration for -email, -domain, -ip or explicit password settings")
-		u        = flags.String("u", "", "Target username or email")
-		f        = flags.String("f", "", "File with targets (one per line)")
-		s        = flags.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
-		p        = flags.String("p", "", "Proxies file (http://ip:port or socks5://ip:port)")
-		o        = flags.String("o", "output", "Output directory")
-		of       = flags.String("of", "json,csv,txt", "Output formats: json,csv,txt (comma-separated)")
-		rf       = flags.String("rf", "cli,html", "Report formats: cli,html,docx (comma-separated)")
-		w        = flags.Int("w", 50, "Number of concurrent workers")
-		rt       = flags.Duration("rt", 15*time.Second, "HTTP request timeout")
-		tt       = flags.Duration("tt", 10*time.Minute, "Total search timeout per batch")
-		mc       = flags.Int("mc", 500, "Max idle connections in pool")
-		mch      = flags.Int("mch", 100, "Max idle connections per host")
-		rl       = flags.Duration("rl", 500*time.Millisecond, "Rate limit delay between requests to same host")
-		ua       = flags.String("ua", "", "External User-Agent list file")
-		d        = flags.Bool("d", false, "Enable deep search (dorking mode stub)")
-		utls     = flags.Bool("utls", false, "Enable uTLS JA3 fingerprint spoofing (anti-WAF)")
-		retries  = flags.Int("retries", 2, "Max retries on 429/5xx errors")
+		bitcoinTX = flags.String("bitcoin-tx", "", "Passive Bitcoin mainnet transaction lookup by TXID")
+		bitcoin   = flags.String("bitcoin", "", "Passive Bitcoin mainnet intelligence (confirmed activity; no wallet operations)")
+		ip        = flags.String("ip", "", "Passive IP intelligence through configured IPinfo Lite (no scanning)")
+		domain    = flags.String("domain", "", "Domain intelligence through configured external sources (not a website search)")
+		email     = flags.String("email", "", "Email breach lookup through HIBP (not a website search)")
+		services  = flags.String("services", "configs/services.yaml", "Service configuration for -email, -domain, -ip, -bitcoin, -bitcoin-tx or explicit password settings")
+		u         = flags.String("u", "", "Target username or email")
+		f         = flags.String("f", "", "File with targets (one per line)")
+		s         = flags.String("s", "configs/sites.yaml", "Sites database YAML/JSON")
+		p         = flags.String("p", "", "Proxies file (http://ip:port or socks5://ip:port)")
+		o         = flags.String("o", "output", "Output directory")
+		of        = flags.String("of", "json,csv,txt", "Output formats: json,csv,txt,html,pdf,docx (comma-separated)")
+		rf        = flags.String("rf", "cli,html", "Legacy report outputs in ./output: cli,json,csv,txt,html,pdf,docx")
+		w         = flags.Int("w", 50, "Number of concurrent workers")
+		rt        = flags.Duration("rt", 15*time.Second, "HTTP request timeout")
+		tt        = flags.Duration("tt", 10*time.Minute, "Total search timeout per batch")
+		mc        = flags.Int("mc", 500, "Max idle connections in pool")
+		mch       = flags.Int("mch", 100, "Max idle connections per host")
+		rl        = flags.Duration("rl", 500*time.Millisecond, "Rate limit delay between requests to same host")
+		ua        = flags.String("ua", "", "External User-Agent list file")
+		d         = flags.Bool("d", false, "Enable deep search (dorking mode stub)")
+		utls      = flags.Bool("utls", false, "Enable uTLS JA3 fingerprint spoofing (anti-WAF)")
+		retries   = flags.Int("retries", 2, "Max retries on 429/5xx errors")
 	)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -140,9 +157,41 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		}
 		return nil, err
 	}
-	selectedEmail, selectedDomain, selectedIP := false, false, false
+
+	watchUsed, watchOptions := false, false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "watch-file" {
+			watchUsed = true
+		}
+		if strings.HasPrefix(f.Name, "watch-") {
+			watchOptions = true
+		}
+	})
+	if watchOptions && !watchUsed {
+		return nil, fmt.Errorf("watch options require -watch-file")
+	}
+	if watchUsed {
+		allowed := map[string]bool{"watch-file": true, "watch-interval": true, "watch-state-dir": true, "watch-concurrency": true, "s": true, "services": true, "rt": true, "tt": true}
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if !allowed[f.Name] {
+				invalid = true
+			}
+		})
+		if invalid || flags.NArg() != 0 || *watchFile == "" || len(*watchFile) > 4096 || *watchDir == "" || len(*watchDir) > 4096 || *watchInterval < 30*time.Second || *watchInterval > 299*time.Second || *watchConcurrency < 1 || *watchConcurrency > 4 || *rt <= 0 || *rt > 15*time.Second || *tt <= 0 || *tt > 10*time.Minute {
+			return nil, fmt.Errorf("invalid watch options; interval 30s-299s, concurrency 1-4, request timeout <=15s, cycle timeout <=10m")
+		}
+		return &AppConfig{Mode: ModeWatch, WatchFile: *watchFile, WatchStateDir: *watchDir, WatchInterval: *watchInterval, WatchConcurrency: *watchConcurrency, ServicesFile: *services, SitesFile: *s, RequestTimeout: *rt, TotalTimeout: *tt, Workers: 4, MaxIdleConns: 32, MaxIdleConnsPerHost: 4, RateLimitPerHost: time.Second, MaxRetries: 0}, nil
+	}
+	selectedEmail, selectedDomain, selectedIP, selectedBitcoin, selectedBitcoinTX := false, false, false, false, false
 	selectedPrompt, usedServices := false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "bitcoin-tx" {
+			selectedBitcoinTX = true
+		}
+		if f.Name == "bitcoin" {
+			selectedBitcoin = true
+		}
 		if f.Name == "ip" {
 			selectedIP = true
 		}
@@ -178,7 +227,7 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if password.seen && password.value.Empty() {
 			return nil, fmt.Errorf("password input must not be empty")
 		}
-		allowed := map[string]bool{"password": true, "password-prompt": true, "password-backend": true, "password-db": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		allowed := map[string]bool{"password": true, "password-prompt": true, "password-backend": true, "password-db": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true, "ai": true, "ai-config": true}
 		invalid := false
 		flags.Visit(func(f *flag.Flag) {
 			if !allowed[f.Name] {
@@ -191,8 +240,36 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if *rt <= 0 || *tt <= 0 {
 			return nil, fmt.Errorf("password lookup timeouts must be positive")
 		}
+	} else if selectedBitcoinTX {
+		allowed := map[string]bool{"bitcoin-tx": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true, "ai": true, "ai-config": true}
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if !allowed[f.Name] {
+				invalid = true
+			}
+		})
+		if invalid || flags.NArg() != 0 {
+			return nil, fmt.Errorf("Bitcoin transaction mode accepts one TXID and only services, timeout, output and report options")
+		}
+		if *rt <= 0 || *tt <= 0 {
+			return nil, fmt.Errorf("Bitcoin lookup timeouts must be positive")
+		}
+	} else if selectedBitcoin {
+		allowed := map[string]bool{"bitcoin": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true, "ai": true, "ai-config": true}
+		invalid := false
+		flags.Visit(func(f *flag.Flag) {
+			if !allowed[f.Name] {
+				invalid = true
+			}
+		})
+		if invalid || flags.NArg() != 0 {
+			return nil, fmt.Errorf("Bitcoin mode accepts one address and only services, timeout, output and report options")
+		}
+		if *rt <= 0 || *tt <= 0 {
+			return nil, fmt.Errorf("Bitcoin lookup timeouts must be positive")
+		}
 	} else if selectedIP {
-		allowed := map[string]bool{"ip": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		allowed := map[string]bool{"ip": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true, "ai": true, "ai-config": true}
 		invalid := false
 		flags.Visit(func(f *flag.Flag) {
 			if !allowed[f.Name] {
@@ -206,7 +283,7 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 			return nil, fmt.Errorf("IP lookup timeouts must be positive")
 		}
 	} else if selectedDomain {
-		allowed := map[string]bool{"domain": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		allowed := map[string]bool{"domain": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true, "ai": true, "ai-config": true}
 		invalid := false
 		flags.Visit(func(f *flag.Flag) {
 			if !allowed[f.Name] {
@@ -220,7 +297,7 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 			return nil, fmt.Errorf("domain lookup timeouts must be positive")
 		}
 	} else if selectedEmail {
-		allowed := map[string]bool{"email": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true}
+		allowed := map[string]bool{"email": true, "services": true, "rt": true, "tt": true, "o": true, "of": true, "rf": true, "ai": true, "ai-config": true}
 		var unsupported string
 		flags.Visit(func(f *flag.Flag) {
 			if !allowed[f.Name] {
@@ -239,15 +316,16 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 	} else {
 
 		if usedServices {
-			return nil, fmt.Errorf("-services is only used with -email, -domain, -ip or password mode")
+			return nil, fmt.Errorf("-services is only used with -email, -domain, -ip, -bitcoin, -bitcoin-tx or password mode")
 		}
 	}
 
-	if !selectedEmail && !selectedDomain && !selectedIP && !selectedPassword && *u == "" && *f == "" {
-		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -domain HOSTNAME OR -ip ADDRESS OR -password VALUE OR -password-prompt")
+	if !selectedEmail && !selectedDomain && !selectedIP && !selectedBitcoin && !selectedBitcoinTX && !selectedPassword && *u == "" && *f == "" {
+		return nil, fmt.Errorf("usage: agentsearch -u TARGET OR -f FILE OR -email ADDRESS OR -domain HOSTNAME OR -ip ADDRESS OR -bitcoin ADDRESS OR -bitcoin-tx TXID OR -password VALUE OR -password-prompt")
 	}
 
 	cfg = &AppConfig{
+		AI: *ai, AIConfig: *aiConfig,
 		SitesFile:           *s,
 		ProxiesFile:         *p,
 		OutputDir:           *o,
@@ -272,6 +350,24 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		if usedServices {
 			cfg.ServicesFile = *services
 		}
+	}
+	if selectedBitcoinTX {
+		target, err := models.NewBitcoinTransactionTarget(*bitcoinTX)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Mode = ModeBitcoinTransaction
+		cfg.ServicesFile = *services
+		cfg.Targets = []string{target.Value()}
+	}
+	if selectedBitcoin {
+		target, err := models.NewBitcoinTarget(*bitcoin)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Mode = ModeBitcoin
+		cfg.ServicesFile = *services
+		cfg.Targets = []string{target.Value()}
 	}
 	if selectedIP {
 		target, err := models.NewIPTarget(*ip)
@@ -336,17 +432,26 @@ func ParseArgs(args []string) (cfg *AppConfig, parseErr error) {
 		}
 		cfg.PasswordDatabasePath = path
 	}
-	if cfg.Mode == ModePassword {
-		for _, format := range cfg.OutputFormats {
-			if format != "json" && format != "csv" && format != "txt" {
-				return nil, fmt.Errorf("invalid password output format; choose json,csv,txt")
-			}
+	valid := func(format string) bool {
+		switch format {
+		case "json", "csv", "txt", "html", "pdf", "docx":
+			return true
 		}
-		for _, format := range cfg.ReportFormats {
-			if format != "cli" && format != "html" && format != "docx" {
-				return nil, fmt.Errorf("invalid password report format; choose cli,html,docx")
-			}
+		return false
+	}
+	for _, format := range cfg.OutputFormats {
+		if !valid(format) {
+			return nil, fmt.Errorf("invalid output format; choose json,csv,txt,html,pdf,docx")
 		}
+	}
+	for _, format := range cfg.ReportFormats {
+		if format != "cli" && !valid(format) {
+			return nil, fmt.Errorf("invalid report format")
+		}
+	}
+
+	if cfg.AI && len(cfg.OutputFormats)+len(cfg.ReportFormats) == 0 {
+		return nil, fmt.Errorf("AI analysis requires at least one report/output format")
 	}
 	return cfg, nil
 }

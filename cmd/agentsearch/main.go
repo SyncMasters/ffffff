@@ -39,6 +39,9 @@ func run(parent context.Context, args []string, prompt security.PasswordPrompt) 
 	defer func() { cfg.Password.Destroy() }()
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if cfg.Mode == config.ModeWatch {
+		return runWatch(ctx, cfg, os.Stdout)
+	}
 	ctx, cancel := context.WithTimeout(ctx, cfg.TotalTimeout)
 	defer cancel()
 

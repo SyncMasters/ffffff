@@ -43,24 +43,45 @@ func (rl *HostLimiter) WaitContext(ctx context.Context, rawURL string) error {
 		return nil
 	}
 
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	if last, ok := rl.lastRequest[host]; ok {
-		elapsed := time.Since(last)
-		if elapsed < rl.delay {
-			timer := time.NewTimer(rl.delay - elapsed)
-			defer timer.Stop()
-			select {
-			case <-timer.C:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+	// Recheck after each wait: a provider may extend the host cooldown while
+	// another request is waiting. Do not hold the mutex across a cancellable wait.
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rl.mu.Lock()
+		delay := time.Until(rl.lastRequest[host].Add(rl.delay))
+		if delay <= 0 {
+			rl.lastRequest[host] = time.Now()
+			rl.mu.Unlock()
+			return nil
+		}
+		rl.mu.Unlock()
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+
+}
+
+// Defer postpones this host's next request after a provider Retry-After response.
+// It only extends an existing delay; callers bound and validate the duration.
+func (rl *HostLimiter) Defer(rawURL string, delay time.Duration) {
+	if delay <= 0 {
+		return
 	}
-	rl.lastRequest[host] = time.Now()
-	return nil
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return
+	}
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	next := time.Now().Add(delay - rl.delay)
+	if next.After(rl.lastRequest[u.Host]) {
+		rl.lastRequest[u.Host] = next
+	}
 }

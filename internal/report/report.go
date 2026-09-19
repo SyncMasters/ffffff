@@ -1,13 +1,8 @@
 package report
 
 import (
-	"encoding/json"
-	"fmt"
-	"log/slog"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/johan-larp/agentsearch/internal/models"
@@ -62,6 +57,7 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 	}
 
 	siteMap := make(map[string]*SiteStat)
+	counts := map[string]int{}
 	blockedSet := make(map[string]struct{})
 
 	for _, r := range results {
@@ -77,6 +73,7 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 			s.Errors++
 		}
 
+		counts[r.SiteName]++
 		// Aggregate by display source.
 		st, ok := siteMap[r.SiteName]
 		if !ok {
@@ -94,11 +91,14 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 
 	for _, st := range siteMap {
 		if st.Found > 0 || st.Blocked > 0 {
-			st.AvgLatency = st.AvgLatency / time.Duration(st.Found+st.Blocked+1)
+			st.AvgLatency = st.AvgLatency / time.Duration(counts[st.Name])
 			s.TopSites = append(s.TopSites, *st)
 		}
 	}
 	sort.Slice(s.TopSites, func(i, j int) bool {
+		if s.TopSites[i].Found == s.TopSites[j].Found {
+			return s.TopSites[i].Name < s.TopSites[j].Name
+		}
 		return s.TopSites[i].Found > s.TopSites[j].Found
 	})
 
@@ -110,54 +110,17 @@ func BuildSummary(target string, results []models.Result, duration time.Duration
 	return s
 }
 
-// WriteAll generates the requested report formats.
+// WriteAll is the legacy -rf compatibility entry point.
 func WriteAll(dir string, formats []string, target string, results []models.Result, duration time.Duration) error {
-	target, results = normalizeResults(target, results)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create report dir: %w", err)
-	}
-
-	summary := BuildSummary(target, results, duration)
-
-	for _, f := range formats {
-		var gen Generator
-		switch f {
-		case "cli":
-			gen = NewCLIReport()
-		case "html":
-			gen = NewHTMLReport()
-		case "docx":
-			gen = NewDOCXReport()
-		default:
-			slog.Warn("unknown report format", "error_category", "invalid_request")
-			continue
-		}
-
-		_, err := gen.Generate(target, results, duration)
-		if err != nil {
-			slog.Error("generate report failed", "format", f, "error_category", "internal_error")
-			continue
-		}
-		slog.Info("report generated", "format", f)
-	}
-
-	// Also export a JSON summary.
-	summaryPath := filepath.Join(dir, fmt.Sprintf("%s_summary.json", sanitizeFilename(target)))
-	if err := writeSummaryJSON(summaryPath, summary); err != nil {
-		slog.Error("write summary failed", "error_category", "internal_error")
-	}
-
-	return nil
-}
-
-func writeSummaryJSON(path string, summary Summary) error {
-	f, err := os.Create(path)
+	r, err := legacyReport(target, results, duration)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	return WriteOutputs(dir, nil, formats, r)
+}
 
-	return json.NewEncoder(f).Encode(struct {
+func summaryJSON(summary Summary) []byte {
+	return encoded(struct {
 		Target   string `json:"target"`
 		Total    int    `json:"total"`
 		Found    int    `json:"found"`
@@ -167,14 +130,11 @@ func writeSummaryJSON(path string, summary Summary) error {
 		Duration string `json:"duration"`
 	}{summary.Target, summary.Total, summary.Found, summary.NotFound, summary.Blocked, summary.Errors, summary.Duration.String()})
 }
-
-func sanitizeFilename(name string) string {
-	replacer := strings.NewReplacer(
-		"/", "_", "\\", "_", ":", "_", "*", "_",
-		"?", "_", "\"", "_", "<", "_", ">", "_", "|", "_", " ", "_",
-	)
-	return replacer.Replace(name)
+func writeSummaryJSON(path string, summary Summary) error {
+	return os.WriteFile(path, summaryJSON(summary), 0600)
 }
+
+func sanitizeFilename(name string) string { return SafeBase(name) }
 
 // normalizeResults protects direct generator callers as well as the app path.
 // The legacy string argument is a display label, never sensitive input.
